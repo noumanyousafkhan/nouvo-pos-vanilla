@@ -1,0 +1,115 @@
+/* ============================================
+   NOUVO POS VANILLA — Base Styles
+   ============================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background-color: #F5F1E8;
+  -ms-text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'Poppins', 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #F5F1E8;
+  color: #1A1A1A;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #F5F1E8; }
+::-webkit-scrollbar-thumb {
+  background: #C9C3B5;
+  border-radius: 5px;
+  border: 2px solid #F5F1E8;
+}
+::-webkit-scrollbar-thumb:hover { background: #1B4D3E; }
+* { scrollbar-width: thin; scrollbar-color: #C9C3B5 #F5F1E8; }
+
+/* ============================================
+   AUTOFILL
+   ============================================ */
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px white inset !important;
+  -webkit-text-fill-color: #1A1A1A !important;
+}
+
+/* ============================================
+   CURSOR — MINIMAL, NO GLOBAL OVERRIDE
+   ============================================ */
+
+/* Buttons and links — hand */
+button,
+a,
+select,
+summary,
+[role='button'] {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled,
+[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+/* Text inputs — text cursor */
+input[type='text'],
+input[type='password'],
+input[type='email'],
+input[type='number'],
+input[type='search'],
+input[type='tel'],
+input[type='url'],
+textarea {
+  cursor: text;
+}
+
+input[type='text']:disabled,
+input[type='password']:disabled,
+input[type='email']:disabled,
+input[type='number']:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
+/* Checkbox / Radio — hand */
+input[type='checkbox'],
+input[type='radio'] {
+  cursor: pointer;
+}
+
+/* Remove HTML5 invalid outline */
+input:invalid,
+textarea:invalid,
+select:invalid {
+  outline: none;
+  box-shadow: none;
+}
+
+/* ============================================
+   NO label { cursor: pointer } — HEADINGS ARE TEXT
+   ============================================ */

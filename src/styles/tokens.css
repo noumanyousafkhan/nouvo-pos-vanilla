@@ -1,0 +1,29 @@
+:root {
+  /* Colors */
+  --nouvo-green: #1B4D3E;
+  --nouvo-green-light: #7BA88C;
+  --nouvo-green-dark: #0F2E24;
+  --nouvo-cream: #F5F1E8;
+  --nouvo-cream-dark: #E8E3D6;
+  --nouvo-salmon: #F4A9A8;
+  --nouvo-gold: #D4A84B;
+  --nouvo-red: #E85A5A;
+  --nouvo-yellow: #F5C842;
+  --nouvo-ink: #1A1A1A;
+  --nouvo-gray: #8A8A8A;
+  --nouvo-gray-light: #B0B0B0;
+  --nouvo-border: #D0D0D0;
+
+  /* Radius */
+  --radius-card: 16px;
+  --radius-button: 10px;
+  --radius-input: 10px;
+
+  /* Shadows */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.10);
+  --shadow-focus: 0 0 0 3px rgba(27, 77, 62, 0.08);
+
+  /* Color scheme (Windows dark-mode safe) */
+  color-scheme: light;
+}
