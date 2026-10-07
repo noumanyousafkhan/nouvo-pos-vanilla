@@ -7,7 +7,7 @@
       :class="collapsed ? 'grid-cols-[1fr]' : 'grid-cols-[1fr_minmax(340px,400px)]'"
     >
       <div class="flex flex-col gap-4 overflow-hidden min-w-0">
-        <!-- Search + Filter + Cart (when collapsed) all in one row -->
+        <!-- Search row -->
         <div class="flex items-center gap-3">
           <div class="flex-1 min-w-0">
             <PosSearchBar
@@ -20,19 +20,17 @@
             />
           </div>
 
-          <!-- Cart expand button — right edge, same height as filter -->
+          <!-- Cart button when collapsed -->
           <button
             v-if="collapsed"
             type="button"
-            class="cursor-pointer shrink-0 h-12 pl-3 pr-5 rounded-xl bg-nouvo-green text-white hover:bg-nouvo-green-dark transition-all flex items-center gap-2.5 active:scale-95"
+            class="cursor-pointer shrink-0 h-12 px-4 rounded-xl bg-nouvo-green text-white hover:bg-nouvo-green-dark transition-all flex items-center gap-2.5 active:scale-95"
             title="Show cart"
             @click="collapsed = false"
           >
-            <!-- LEFT arrow (<) -->
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6"/>
+              <polyline points="9 18 15 12 9 6"/>
             </svg>
-
             <div class="relative shrink-0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="9" cy="21" r="1"></circle>
@@ -40,11 +38,10 @@
                 <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
               </svg>
               <span
-                v-if="cart.itemCount > 0"
+                v-if="!cart.isEmpty"
                 class="absolute -top-1.5 -right-1.5 bg-nouvo-yellow text-nouvo-green rounded-full min-w-[18px] h-[18px] px-1 text-[10px] font-bold flex items-center justify-center border-2 border-nouvo-green"
               >{{ cart.itemCount }}</span>
             </div>
-
             <div class="leading-tight text-left">
               <div class="text-[10px] opacity-80 font-medium">Cart</div>
               <div class="text-[12px] font-bold">{{ store.currency }} {{ cart.total.toFixed(1) }}</div>
@@ -106,6 +103,14 @@
       @close="customizingProduct = null"
       @add="onCustomizedAdd"
     />
+
+    <DealCustomizationModal
+      v-if="customizingDeal"
+      :deal="customizingDeal.deal"
+      :expanded-items="customizingDeal.expandedItems"
+      @close="customizingDeal = null"
+      @add="onDealCustomizedAdd"
+    />
   </div>
 </template>
 
@@ -118,6 +123,7 @@ import CategoryTabs from './components/CategoryTabs.vue'
 import ProductGrid from './components/ProductGrid.vue'
 import CartPanel from './components/CartPanel.vue'
 import ProductCustomizationModal from './components/ProductCustomizationModal.vue'
+import DealCustomizationModal from './components/DealCustomizationModal.vue'
 import { useCartStore } from '@/stores/cart'
 import { useMenuStore } from '@/stores/menu'
 import { useSettingsStore } from '@/stores/settings'
@@ -135,6 +141,7 @@ const activeCategoryId = ref<number | null>(null)
 const searchQuery = ref('')
 const loadingProducts = ref(false)
 const customizingProduct = ref<any>(null)
+const customizingDeal = ref<any>(null)
 
 const sortBy = ref<string>('default')
 const hideOutOfStock = ref(false)
@@ -239,7 +246,14 @@ function onCustomizedAdd(payload: any) {
 
 async function addDeal(deal: any) {
   const res = await invokeSafe<any>('deals:expandToCart', deal.id)
-  if (res.ok) cart.addDealLines(deal, res.data || [])
+  if (res.ok && res.data) {
+    customizingDeal.value = { deal, expandedItems: res.data }
+  }
+}
+
+function onDealCustomizedAdd(payload: any) {
+  cart.addCustomizedDeal(payload)
+  customizingDeal.value = null
 }
 
 function onCheckout() {

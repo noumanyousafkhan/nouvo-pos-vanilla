@@ -9,11 +9,19 @@ export interface CartModifier {
   price: number
 }
 
+export interface FlavourSelection {
+  flavourProductId: number
+  flavourName: string
+  quantity: number
+}
+
 export interface DealChildItem {
   productId: number
   productName: string
   variantName: string | null
   quantity: number
+  modifiers?: CartModifier[]
+  selectedFlavours?: FlavourSelection[]
 }
 
 export interface CartItem {
@@ -91,13 +99,11 @@ export const useCartStore = defineStore('cart', () => {
     const existing = items.value.find(
       (i) => i.type === 'product' && buildSignature(i) === signature
     )
-
     if (existing) {
       existing.quantity += newItem.quantity
       existing.lineTotal = existing.unitPrice * existing.quantity
       return existing
     }
-
     const lineTotal = newItem.unitPrice * newItem.quantity
     const item: CartItem = { ...newItem, id: generateLineId(), lineTotal }
     items.value.push(item)
@@ -138,39 +144,53 @@ export const useCartStore = defineStore('cart', () => {
     })
   }
 
-  function addDealLines(deal: any, expandedItems: any[]) {
+  /**
+   * Add a deal with customization (flavours + modifiers) as a single line.
+   * Payload from DealCustomizationModal.
+   */
+  function addCustomizedDeal(payload: {
+    deal: any
+    items: any[]
+    dealPrice: number
+    modifiersTotal: number
+    grandTotal: number
+  }) {
     const lineId = generateLineId()
-    const dealItems: DealChildItem[] = (expandedItems || []).map((e: any) => ({
-      productId: e.productId,
-      productName: e.productName,
-      variantName: e.variantName || null,
-      quantity: Number(e.quantity) || 1
+
+    // Keep children AS-IS with flavours + modifiers preserved
+    const dealItems: DealChildItem[] = payload.items.map((i) => ({
+      productId: i.productId,
+      productName: i.productName,
+      variantName: i.variantName || null,
+      quantity: i.quantity,
+      modifiers: i.modifiers || [],
+      selectedFlavours: i.selectedFlavours || []
     }))
 
-    const item: CartItem = {
+    const dealLine: CartItem = {
       id: lineId,
       type: 'deal',
       productId: null,
-      productName: deal.name,
-      image_path: deal.image_path ?? null,
+      productName: payload.deal.name,
+      image_path: payload.deal.image_path ?? null,
       variantId: null,
       variantName: null,
-      basePrice: Number(deal.price) || 0,
+      basePrice: payload.dealPrice,
       variantAdjust: 0,
       modifiers: [],
-      modifiersTotal: 0,
+      modifiersTotal: payload.modifiersTotal,
       quantity: 1,
-      unitPrice: Number(deal.price) || 0,
-      lineTotal: Number(deal.price) || 0,
+      unitPrice: payload.grandTotal,
+      lineTotal: payload.grandTotal,
       notes: '',
-      dealId: deal.id,
-      dealName: deal.name,
+      dealId: payload.deal.id,
+      dealName: payload.deal.name,
       dealItems,
-      dealPrice: Number(deal.price) || 0
+      dealPrice: payload.dealPrice
     }
 
-    items.value.push(item)
-    return item
+    items.value.push(dealLine)
+    return dealLine
   }
 
   function incrementQty(lineId: string) {
@@ -223,12 +243,38 @@ export const useCartStore = defineStore('cart', () => {
     currency.value = s.currency
   }
 
+  /**
+   * Export for checkout.
+   *
+   * IMPORTANT: Deal line is sent as ONE item with a `dealChildren` array
+   * (structured). It is NOT flattened into modifiers.
+   * The ReceiptFormatter will handle printing children properly.
+   */
   function exportForCheckout() {
     const plainItems: any[] = []
 
     for (const i of items.value) {
       if (i.type === 'deal') {
-        // Deal as single line — no notes, children come via modifiers
+        // Deal line — send children as a structured array
+        const dealChildren = (i.dealItems || []).map((child) => ({
+          productId: child.productId,
+          productName: child.productName,
+          variantName: child.variantName,
+          quantity: child.quantity,
+          modifiers: (child.modifiers || []).map((m) => ({
+            modifierId: m.modifierId ?? null,
+            modifierName: String(m.modifierName || ''),
+            optionId: m.optionId ?? null,
+            optionName: String(m.optionName || ''),
+            price: Number(m.price) || 0
+          })),
+          selectedFlavours: (child.selectedFlavours || []).map((f) => ({
+            flavourProductId: f.flavourProductId,
+            flavourName: f.flavourName,
+            quantity: f.quantity
+          }))
+        }))
+
         plainItems.push({
           productId: null,
           productName: i.productName,
@@ -236,17 +282,12 @@ export const useCartStore = defineStore('cart', () => {
           variantName: null,
           basePrice: i.dealPrice || 0,
           variantAdjust: 0,
-          modifiers: (i.dealItems || []).map((c, idx) => ({
-            modifierId: idx + 1,
-            modifierName: 'child',
-            optionId: idx + 1,
-            optionName: c.variantName ? `${c.productName} (${c.variantName})` : c.productName,
-            price: 0
-          })),
+          modifiers: [],           // ⚠️ Empty on purpose — children are inside dealChildren
+          dealChildren,             // ← Structured children
           quantity: i.quantity,
           unitPrice: i.unitPrice,
           lineTotal: i.lineTotal,
-          notes: '',                    // ← empty
+          notes: '',
           dealId: i.dealId,
           dealName: i.dealName
         })
@@ -265,6 +306,7 @@ export const useCartStore = defineStore('cart', () => {
             optionName: String(m.optionName || ''),
             price: Number(m.price) || 0
           })),
+          dealChildren: [],
           quantity: i.quantity,
           unitPrice: i.unitPrice,
           lineTotal: i.lineTotal,
@@ -297,7 +339,7 @@ export const useCartStore = defineStore('cart', () => {
     taxRate, taxInclusive, currency,
     itemCount, subtotal, discountValue, deliveryValue,
     taxAmount, total, isEmpty,
-    addProduct, addDealLines, addItem,
+    addProduct, addCustomizedDeal, addItem,
     incrementQty, decrementQty, removeItem, clearCart,
     setOrderType, setDiscount, setDeliveryCharge, loadSettings,
     exportForCheckout

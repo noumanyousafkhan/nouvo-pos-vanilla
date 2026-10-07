@@ -12,23 +12,19 @@ export function registerMenuIpc(): void {
   )
   handle('menu:categories:get', (id: number) => CategoryService.get(id))
   handle('menu:categories:create', (data, userId) => CategoryService.create(data, userId))
-  handle('menu:categories:update', (id, data, userId) =>
-    CategoryService.update(id, data, userId)
-  )
+  handle('menu:categories:update', (id, data, userId) => CategoryService.update(id, data, userId))
   handle('menu:categories:delete', (id, userId) => CategoryService.delete(id, userId))
   handle('menu:categories:toggle', (id, userId) => CategoryService.toggleActive(id, userId))
   handle('menu:categories:reorder', (ids, userId) => CategoryService.reorder(ids, userId))
 
-  // Products
-  handle('menu:products:list', (categoryId?: number | null, includeInactive?: boolean) =>
-    ProductService.list(categoryId, includeInactive)
+  // Products (3rd param: includeDealOnly)
+  handle('menu:products:list', (categoryId?: number | null, includeInactive?: boolean, includeDealOnly?: boolean) =>
+    ProductService.list(categoryId, includeInactive, includeDealOnly)
   )
   handle('menu:products:get', (id: number) => ProductService.get(id))
   handle('menu:products:getFull', (id: number) => ProductService.getFull(id))
   handle('menu:products:create', (data, userId) => ProductService.create(data, userId))
-  handle('menu:products:update', (id, data, userId) =>
-    ProductService.update(id, data, userId)
-  )
+  handle('menu:products:update', (id, data, userId) => ProductService.update(id, data, userId))
   handle('menu:products:softDelete', (id, userId) => ProductService.softDelete(id, userId))
   handle('menu:products:toggle', (id, userId) => ProductService.toggleActive(id, userId))
   handle('menu:products:upsertFull', (data, userId) => ProductService.upsertFull(data, userId))

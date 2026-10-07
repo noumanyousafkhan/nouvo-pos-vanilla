@@ -1,6 +1,10 @@
 import { getDatabase } from '../database/Database'
-import { ReportFiltersSchema, TopProductsFiltersSchema, RecentTransactionsFiltersSchema } from './schemas'
 import { SettingsService } from '../settings/SettingsService'
+import {
+  ReportFiltersSchema,
+  TopProductsFiltersSchema,
+  RecentTransactionsFiltersSchema
+} from './schemas'
 
 interface RangeDates {
   from: string | null
@@ -8,6 +12,9 @@ interface RangeDates {
 }
 
 export class ReportService {
+  // ═══════════════════════════════════════════════════════
+  // RANGE RESOLVER
+  // ═══════════════════════════════════════════════════════
   private static resolveRange(parsed: any): RangeDates {
     if (parsed.range === 'all') return { from: null, to: null }
     if (parsed.range === 'custom') {
@@ -44,48 +51,72 @@ export class ReportService {
         start.setHours(0, 0, 0, 0)
         end.setHours(23, 59, 59, 999)
         break
+      default:
+        return { from: null, to: null }
     }
 
     return { from: start.toISOString(), to: end.toISOString() }
   }
 
-  /**
-   * Build WHERE clause. Optional `alias` prefixes column names
-   * to avoid ambiguity when JOINs are involved.
-   */
-  private static buildWhere(
-    parsed: any,
-    range: RangeDates,
-    alias: string = ''
-  ): { sql: string; params: any[] } {
+  private static buildWhere(parsed: any, range: RangeDates, alias = ''): { sql: string; params: any[] } {
+    const prefix = alias ? `${alias}.` : ''
     const conditions: string[] = []
     const params: any[] = []
-    const p = alias ? `${alias}.` : ''
 
-    if (!parsed.includeVoided) {
-      conditions.push(`${p}status != 'voided'`)
-    }
     if (range.from) {
-      conditions.push(`${p}created_at >= ?`)
+      conditions.push(`${prefix}created_at >= ?`)
       params.push(range.from)
     }
     if (range.to) {
-      conditions.push(`${p}created_at <= ?`)
+      conditions.push(`${prefix}created_at <= ?`)
       params.push(range.to)
     }
+
     if (parsed.orderType) {
-      conditions.push(`${p}order_type = ?`)
+      conditions.push(`${prefix}order_type = ?`)
       params.push(parsed.orderType)
     }
     if (parsed.paymentMethod) {
-      conditions.push(`${p}payment_method = ?`)
+      conditions.push(`${prefix}payment_method = ?`)
       params.push(parsed.paymentMethod)
     }
 
-    const sql = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : ''
-    return { sql, params }
+    // By default exclude voided orders unless explicitly included
+    if (!parsed.includeVoided) {
+      conditions.push(`${prefix}status != 'voided'`)
+    }
+
+    return {
+      sql: conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '',
+      params
+    }
   }
 
+  private static getPreviousPeriodStats(parsed: any, range: RangeDates) {
+    const db = getDatabase()
+    if (!range.from || !range.to) return { revenue: 0, order_count: 0 }
+
+    const from = new Date(range.from)
+    const to = new Date(range.to)
+    const duration = to.getTime() - from.getTime()
+
+    const prevFrom = new Date(from.getTime() - duration).toISOString()
+    const prevTo = from.toISOString()
+
+    const row = db.prepare(`
+      SELECT
+        COUNT(*) as order_count,
+        COALESCE(SUM(total), 0) as revenue
+      FROM orders
+      WHERE created_at >= ? AND created_at <= ? AND status != 'voided'
+    `).get(prevFrom, prevTo) as any
+
+    return { revenue: row?.revenue || 0, order_count: row?.order_count || 0 }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // KPIs
+  // ═══════════════════════════════════════════════════════
   static getKpis(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
@@ -116,15 +147,15 @@ export class ReportService {
     let performance = 'Good'
     if (row.order_count === 0) performance = 'No Data'
     else if (row.order_count >= target) performance = 'Excellent'
-    else if (row.order_count >= target * 0.5) performance = 'Good'
+    else if (row.order_count >= target * 0.7) performance = 'Good'
     else performance = 'Low'
 
     return {
-      revenue: row.revenue,
-      revenueTrend,
+      revenue: Math.round(row.revenue * 100) / 100,
+      revenueTrend: Math.round(revenueTrend * 10) / 10,
       orderCount: row.order_count,
-      orderTrend,
-      avgOrder: row.avg_order,
+      orderTrend: Math.round(orderTrend * 10) / 10,
+      avgOrder: Math.round(row.avg_order * 100) / 100,
       performance,
       dineInCount: row.dine_in_count,
       takeawayCount: row.takeaway_count,
@@ -132,30 +163,9 @@ export class ReportService {
     }
   }
 
-  private static getPreviousPeriodStats(parsed: any, range: RangeDates) {
-    const db = getDatabase()
-    if (!range.from || !range.to) {
-      return { revenue: 0, order_count: 0 }
-    }
-    const from = new Date(range.from)
-    const to = new Date(range.to)
-    const duration = to.getTime() - from.getTime()
-    const prevFrom = new Date(from.getTime() - duration).toISOString()
-    const prevTo = new Date(to.getTime() - duration).toISOString()
-
-    const where = this.buildWhere(parsed, { from: prevFrom, to: prevTo })
-    const row = db.prepare(`
-      SELECT
-        COUNT(*) as order_count,
-        COALESCE(SUM(total), 0) as revenue
-      FROM orders${where.sql}
-    `).get(...where.params) as any
-    return row
-  }
-
-  /**
-   * Sales chart — pass alias 'o' so joined queries stay unambiguous.
-   */
+  // ═══════════════════════════════════════════════════════
+  // SALES CHART
+  // ═══════════════════════════════════════════════════════
   static getSalesChart(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
@@ -170,12 +180,18 @@ export class ReportService {
     } else if (parsed.range === 'week' || parsed.range === 'month') {
       groupExpr = "strftime('%Y-%m-%d', o.created_at)"
       format = 'day'
+    } else if (parsed.range === 'all') {
+      // 'all' → daily buckets (best for up to ~90 days of data)
+      groupExpr = "strftime('%Y-%m-%d', o.created_at)"
+      format = 'day'
+    } else if (parsed.range === 'year') {
+      groupExpr = "strftime('%Y-%m', o.created_at)"
+      format = 'month'
     } else {
       groupExpr = "strftime('%Y-%m', o.created_at)"
       format = 'month'
     }
 
-    // Use alias 'o' for orders in both queries
     const where = this.buildWhere(parsed, range, 'o')
 
     // Total buckets
@@ -236,6 +252,9 @@ export class ReportService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // TOP PRODUCTS (with deal children expansion)
+  // ═══════════════════════════════════════════════════════
   static getTopProducts(filters: unknown) {
     const parsed = TopProductsFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
@@ -246,20 +265,90 @@ export class ReportService {
       SELECT
         oi.product_id,
         oi.product_name,
-        SUM(oi.quantity) as total_qty,
-        SUM(oi.line_total) as total_revenue,
-        COUNT(DISTINCT oi.order_id) as order_count
+        oi.quantity,
+        oi.line_total,
+        oi.notes,
+        oi.order_id
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       ${where.sql}
-      GROUP BY oi.product_id, oi.product_name
-      ORDER BY total_qty DESC
-      LIMIT ?
-    `).all(...where.params, parsed.limit) as any[]
+    `).all(...where.params) as any[]
 
-    return rows
+    const map: Record<string, {
+      product_id: number | null
+      product_name: string
+      total_qty: number
+      total_revenue: number
+      order_ids: Set<number>
+    }> = {}
+
+    for (const row of rows) {
+      let children: any[] = []
+      try {
+        if (row.notes && typeof row.notes === 'string' && row.notes.trim().startsWith('{')) {
+          const parsedNotes = JSON.parse(row.notes)
+          if (parsedNotes && parsedNotes._type === 'deal_children' && Array.isArray(parsedNotes.children)) {
+            children = parsedNotes.children
+          }
+        }
+      } catch {}
+
+      if (children.length > 0) {
+        const totalChildQty = children.reduce((s: number, c: any) => s + (Number(c.quantity) || 0), 0)
+        const dealLineTotal = Number(row.line_total) || 0
+
+        for (const child of children) {
+          const name = child.variantName
+            ? `${child.productName} (${child.variantName})`
+            : child.productName
+          const qty = Number(child.quantity) || 0
+          const childRevenue = totalChildQty > 0 ? (dealLineTotal * qty) / totalChildQty : 0
+
+          if (!map[name]) {
+            map[name] = {
+              product_id: child.productId ?? null,
+              product_name: name,
+              total_qty: 0,
+              total_revenue: 0,
+              order_ids: new Set()
+            }
+          }
+          map[name].total_qty += qty
+          map[name].total_revenue += childRevenue
+          map[name].order_ids.add(row.order_id)
+        }
+      } else {
+        const name = row.product_name
+        if (!map[name]) {
+          map[name] = {
+            product_id: row.product_id,
+            product_name: name,
+            total_qty: 0,
+            total_revenue: 0,
+            order_ids: new Set()
+          }
+        }
+        map[name].total_qty += Number(row.quantity) || 0
+        map[name].total_revenue += Number(row.line_total) || 0
+        map[name].order_ids.add(row.order_id)
+      }
+    }
+
+    return Object.values(map)
+      .sort((a, b) => b.total_qty - a.total_qty)
+      .slice(0, parsed.limit)
+      .map((r) => ({
+        product_id: r.product_id,
+        product_name: r.product_name,
+        total_qty: r.total_qty,
+        total_revenue: Math.round(r.total_revenue * 100) / 100,
+        order_count: r.order_ids.size
+      }))
   }
 
+  // ═══════════════════════════════════════════════════════
+  // CATEGORY PERFORMANCE
+  // ═══════════════════════════════════════════════════════
   static getCategoryPerformance(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
@@ -270,11 +359,10 @@ export class ReportService {
       SELECT
         c.id as category_id,
         c.name as category_name,
-        COALESCE(SUM(oi.line_total), 0) as revenue,
-        SUM(oi.quantity) as qty,
-        COUNT(DISTINCT oi.order_id) as order_count
-      FROM order_items oi
-      JOIN orders o ON o.id = oi.order_id
+        COALESCE(SUM(oi.quantity), 0) as qty,
+        COALESCE(SUM(oi.line_total), 0) as revenue
+      FROM orders o
+      JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id
       LEFT JOIN categories c ON c.id = p.category_id
       ${where.sql}
@@ -282,13 +370,20 @@ export class ReportService {
       ORDER BY revenue DESC
     `).all(...where.params) as any[]
 
-    const total = rows.reduce((s, r) => s + r.revenue, 0)
+    const total = rows.reduce((s, r) => s + (r.revenue || 0), 0)
+
     return rows.map((r) => ({
-      ...r,
+      category_id: r.category_id,
+      category_name: r.category_name || 'Uncategorized',
+      qty: r.qty,
+      revenue: Math.round(r.revenue * 100) / 100,
       percentage: total > 0 ? (r.revenue / total) * 100 : 0
     }))
   }
 
+  // ═══════════════════════════════════════════════════════
+  // PAYMENT BREAKDOWN
+  // ═══════════════════════════════════════════════════════
   static getPaymentBreakdown(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
@@ -302,15 +397,22 @@ export class ReportService {
         COALESCE(SUM(total), 0) as revenue
       FROM orders${where.sql}
       GROUP BY payment_method
+      ORDER BY revenue DESC
     `).all(...where.params) as any[]
 
-    const total = rows.reduce((s, r) => s + r.revenue, 0)
+    const total = rows.reduce((s, r) => s + (r.revenue || 0), 0)
+
     return rows.map((r) => ({
-      ...r,
+      payment_method: r.payment_method,
+      count: r.count,
+      revenue: Math.round(r.revenue * 100) / 100,
       percentage: total > 0 ? (r.revenue / total) * 100 : 0
     }))
   }
 
+  // ═══════════════════════════════════════════════════════
+  // ORDER TYPE ANALYSIS
+  // ═══════════════════════════════════════════════════════
   static getOrderTypeAnalysis(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
@@ -324,15 +426,22 @@ export class ReportService {
         COALESCE(SUM(total), 0) as revenue
       FROM orders${where.sql}
       GROUP BY order_type
+      ORDER BY revenue DESC
     `).all(...where.params) as any[]
 
-    const total = rows.reduce((s, r) => s + r.revenue, 0)
+    const total = rows.reduce((s, r) => s + (r.count || 0), 0)
+
     return rows.map((r) => ({
-      ...r,
-      percentage: total > 0 ? (r.revenue / total) * 100 : 0
+      order_type: r.order_type,
+      count: r.count,
+      revenue: Math.round(r.revenue * 100) / 100,
+      percentage: total > 0 ? (r.count / total) * 100 : 0
     }))
   }
 
+  // ═══════════════════════════════════════════════════════
+  // ITEMS PERFORMANCE (with deal children expansion)
+  // ═══════════════════════════════════════════════════════
   static getItemsPerformance(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
@@ -342,18 +451,51 @@ export class ReportService {
     const rows = db.prepare(`
       SELECT
         oi.product_name,
-        SUM(oi.quantity) as qty
+        oi.quantity,
+        oi.notes
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       ${where.sql}
-      GROUP BY oi.product_name
-      ORDER BY qty DESC
-      LIMIT 7
     `).all(...where.params) as any[]
 
-    return rows.map((r) => ({ label: r.product_name, value: r.qty }))
+    const totals: Record<string, number> = {}
+
+    for (const row of rows) {
+      let children: any[] = []
+      try {
+        if (row.notes && typeof row.notes === 'string' && row.notes.trim().startsWith('{')) {
+          const parsedNotes = JSON.parse(row.notes)
+          if (parsedNotes && parsedNotes._type === 'deal_children' && Array.isArray(parsedNotes.children)) {
+            children = parsedNotes.children
+          }
+        }
+      } catch {}
+
+      if (children.length > 0) {
+        for (const child of children) {
+          const name = child.variantName
+            ? `${child.productName} (${child.variantName})`
+            : child.productName
+          const qty = Number(child.quantity) || 0
+          totals[name] = (totals[name] || 0) + qty
+        }
+      } else {
+        const name = row.product_name
+        const qty = Number(row.quantity) || 0
+        totals[name] = (totals[name] || 0) + qty
+      }
+    }
+
+    const sorted = Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 7)
+
+    return sorted.map(([label, value]) => ({ label, value }))
   }
 
+  // ═══════════════════════════════════════════════════════
+  // RECENT TRANSACTIONS
+  // ═══════════════════════════════════════════════════════
   static getRecentTransactions(filters: unknown) {
     const parsed = RecentTransactionsFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
@@ -380,47 +522,60 @@ export class ReportService {
     return rows
   }
 
-  /**
-   * Score card — FIXED: proper where clause for voided count.
-   */
+  // ═══════════════════════════════════════════════════════
+  // SCORE — FIXED (was causing SQLITE_ERROR near "AND")
+  // ═══════════════════════════════════════════════════════
   static getScore(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
     const db = getDatabase()
 
-    // Total orders (with voided)
-    const whereAll = this.buildWhere({ ...parsed, includeVoided: true }, range)
-    const totalRow = db.prepare(`SELECT COUNT(*) as c FROM orders${whereAll.sql}`)
-      .get(...whereAll.params) as { c: number }
+    // Total orders (including voided)
+    const totalWhere = this.buildWhere({ ...parsed, includeVoided: true }, range)
+    const totalRow = db.prepare(`
+      SELECT COUNT(*) as count FROM orders${totalWhere.sql}
+    `).get(...totalWhere.params) as any
 
-    // Voided orders — separate where with proper AND
-    const whereVoided = this.buildWhere({ ...parsed, includeVoided: true }, range)
-    const voidedConditions: string[] = []
-    const voidedParams: any[] = []
-    if (whereVoided.sql.includes('WHERE')) {
-      voidedConditions.push(whereVoided.sql.replace(' WHERE ', ''))
-      voidedParams.push(...whereVoided.params)
+    const totalOrders = totalRow?.count || 0
+
+    // Voided orders — build SQL safely (WHERE + AND)
+    const voidedWhere = this.buildWhere({ ...parsed, includeVoided: true }, range)
+    const voidedSql = voidedWhere.sql
+      ? `${voidedWhere.sql} AND status = 'voided'`
+      : ` WHERE status = 'voided'`
+    const voidedRow = db.prepare(`
+      SELECT COUNT(*) as count FROM orders${voidedSql}
+    `).get(...voidedWhere.params) as any
+
+    const voidedOrders = voidedRow?.count || 0
+
+    // Score calculation
+    let score = 100
+    if (totalOrders > 0) {
+      const voidRatio = voidedOrders / totalOrders
+      score = Math.max(0, Math.round(100 - voidRatio * 100))
+    } else {
+      score = 100
     }
-    voidedConditions.push("status = 'voided'")
-    const voidedRow = db.prepare(
-      `SELECT COUNT(*) as c FROM orders WHERE ${voidedConditions.join(' AND ')}`
-    ).get(...voidedParams) as { c: number }
 
-    const successRate = totalRow.c > 0
-      ? ((totalRow.c - voidedRow.c) / totalRow.c) * 100
+    const successRate = totalOrders > 0
+      ? Math.round(((totalOrders - voidedOrders) / totalOrders) * 100)
       : 100
 
     return {
-      score: Math.round(successRate),
-      totalOrders: totalRow.c,
-      voidedOrders: voidedRow.c,
+      score,
+      totalOrders,
+      voidedOrders,
       complaints: [
-        { label: 'Voided Orders', value: voidedRow.c },
-        { label: 'Success Rate', value: `${Math.round(successRate)}%` }
+        { label: 'Voided Orders', value: voidedOrders },
+        { label: 'Success Rate', value: `${successRate}%` }
       ]
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // FULL DASHBOARD
+  // ═══════════════════════════════════════════════════════
   static getFullDashboard(filters: unknown) {
     return {
       kpis: this.getKpis(filters),

@@ -2,14 +2,7 @@
   <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" @click.self="$emit('close')">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
       <header class="flex items-center justify-between px-6 py-4 border-b border-nouvo-gray-border">
-        <div>
-          <h2 class="text-lg font-bold text-nouvo-green">
-            {{ dealId ? 'Edit' : duplicateFrom ? 'Duplicate Deal' : 'New' }} Deal
-          </h2>
-          <p v-if="duplicateFrom" class="text-[11px] text-nouvo-gray mt-0.5">
-            Copying from: {{ duplicateFrom.name }}
-          </p>
-        </div>
+        <h2 class="text-lg font-bold text-nouvo-green">{{ dealId ? 'Edit' : 'New' }} Deal</h2>
         <button type="button" class="cursor-pointer w-8 h-8 rounded-lg hover:bg-nouvo-cream text-nouvo-gray" @click="$emit('close')">✕</button>
       </header>
 
@@ -48,45 +41,33 @@
             <button type="button" class="cursor-pointer bg-nouvo-cream text-nouvo-green px-3 py-1.5 rounded-lg text-[12px] font-semibold hover:bg-nouvo-cream-dark" @click="addItem">+ Add Product</button>
           </div>
 
-          <p v-if="form.items.length === 0" class="text-xs text-nouvo-gray mb-3">
-            Add at least one product to this deal.
+          <p class="text-[11px] text-nouvo-gray mb-3">
+            Size (variant) fix karein — flavour/modifiers customer POS pe select karega.
           </p>
 
           <div class="space-y-2">
             <div v-for="(item, i) in form.items" :key="i" class="flex items-center gap-2">
-              <div class="relative flex-1">
-                <input
-                  v-model="item.productSearch"
-                  type="text"
-                  placeholder="Search product..."
-                  class="w-full px-3 py-2 pr-8 border border-nouvo-gray-border rounded-lg text-sm outline-none focus:border-nouvo-green bg-white"
-                  @focus="openDropdown = i"
-                  @input="openDropdown = i"
-                  @blur="closeDropdownDelayed"
-                />
-                <span v-if="item.product_id" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-nouvo-green text-xs font-bold pointer-events-none">✓</span>
+              <select
+                v-model.number="item.product_id"
+                class="flex-1 px-3 py-2 border border-nouvo-gray-border rounded-lg text-sm outline-none focus:border-nouvo-green bg-white"
+                @change="onProductChange(item)"
+              >
+                <option :value="null">-- Select Product --</option>
+                <option v-for="p in dealAvailableProducts" :key="p.id" :value="p.id">
+                  {{ p.name }}
+                </option>
+              </select>
 
-                <div
-                  v-if="openDropdown === i && filteredProducts(item.productSearch).length > 0"
-                  class="absolute z-30 left-0 right-0 mt-1 bg-white border border-nouvo-gray-border rounded-lg shadow-lg max-h-56 overflow-y-auto"
-                >
-                  <div
-                    v-for="p in filteredProducts(item.productSearch)"
-                    :key="p.id"
-                    class="px-3 py-2 hover:bg-nouvo-cream cursor-pointer text-sm flex justify-between items-center"
-                    @mousedown.prevent="selectProduct(item, p)"
-                  >
-                    <span class="font-medium text-nouvo-ink truncate">{{ p.name }}</span>
-                    <span class="text-nouvo-gray text-xs ml-2 shrink-0">Rs. {{ Number(p.price).toFixed(2) }}</span>
-                  </div>
-                </div>
-                <div
-                  v-else-if="openDropdown === i && item.productSearch && filteredProducts(item.productSearch).length === 0"
-                  class="absolute z-30 left-0 right-0 mt-1 bg-white border border-nouvo-gray-border rounded-lg shadow-lg px-3 py-3 text-sm text-nouvo-gray"
-                >
-                  No products found
-                </div>
-              </div>
+              <select
+                v-if="item.product_id && getVariants(item.product_id).length > 0"
+                v-model.number="item.variant_id"
+                class="w-32 px-3 py-2 border border-nouvo-gray-border rounded-lg text-sm outline-none focus:border-nouvo-green bg-white"
+              >
+                <option :value="null">Size…</option>
+                <option v-for="v in getVariants(item.product_id)" :key="v.id" :value="v.id">
+                  {{ v.name }}
+                </option>
+              </select>
 
               <input
                 v-model.number="item.quantity"
@@ -116,6 +97,9 @@
               <span class="text-nouvo-green font-semibold">Customer saves:</span>
               <span class="font-bold text-nouvo-green">Rs. {{ (normalTotal - Number(form.price)).toFixed(2) }}</span>
             </div>
+            <div v-else-if="Number(form.price) > normalTotal" class="text-nouvo-red font-semibold text-xs">
+              ⚠ Deal price is higher than normal total!
+            </div>
           </div>
         </section>
 
@@ -143,9 +127,10 @@ const props = defineProps<{
 const emit = defineEmits<{ close: []; saved: [] }>()
 
 const allProducts = ref<any[]>([])
+const allCategories = ref<any[]>([])
+const productVariants = ref<Record<number, any[]>>({})
 const saving = ref(false)
 const error = ref('')
-const openDropdown = ref<number | null>(null)
 
 const form = ref({
   name: '',
@@ -157,40 +142,60 @@ const form = ref({
   items: [] as any[]
 })
 
+const dealAvailableProducts = computed(() => {
+  return allProducts.value.filter((p: any) => {
+    const cat = allCategories.value.find((c: any) => c.id === p.category_id)
+    const catName = String(cat?.name || '').trim().toLowerCase()
+    if (catName === 'pizza') {
+      return String(p.name).trim().toLowerCase() === 'pizza'
+    }
+    return true
+  })
+})
+
 const normalTotal = computed(() => {
   return form.value.items.reduce((sum, item) => {
-    return sum + (Number(item.unitPrice) || 0) * (Number(item.quantity) || 1)
+    let price = Number(item.unitPrice) || 0
+    if (item.variant_id) {
+      const variants = productVariants.value[item.product_id] || []
+      const v = variants.find((x: any) => x.id === item.variant_id)
+      if (v) price += Number(v.price_adjust) || 0
+    }
+    return sum + price * (Number(item.quantity) || 1)
   }, 0)
 })
 
+async function loadCategories() {
+  const res = await invokeSafe<any>('menu:categories:list', true)
+  if (res.ok) allCategories.value = res.data || []
+}
+
 async function loadProducts() {
-  const res = await invokeSafe<any>('menu:products:list', null, false)
-  if (res.ok) allProducts.value = res.data || []
+  // includeInactive=true, includeDealOnly=true → so "Pizza" base product is included
+  const res = await invokeSafe<any>('menu:products:list', null, true, true)
+  if (res.ok) {
+    allProducts.value = res.data || []
+    for (const p of allProducts.value) {
+      const v = await invokeSafe<any>('menu:variants:listByProduct', p.id)
+      if (v.ok) productVariants.value[p.id] = v.data || []
+    }
+  }
 }
 
-function filteredProducts(query: string): any[] {
-  const q = String(query || '').trim().toLowerCase()
-  if (!q) return allProducts.value.slice(0, 30)
-  return allProducts.value.filter((p: any) => p.name.toLowerCase().includes(q)).slice(0, 30)
+function getVariants(productId: number): any[] {
+  return productVariants.value[productId] || []
 }
 
-function closeDropdownDelayed() {
-  setTimeout(() => { openDropdown.value = null }, 150)
-}
-
-function selectProduct(item: any, product: any) {
-  item.product_id = product.id
-  item.productName = product.name
-  item.unitPrice = Number(product.price) || 0
-  item.productSearch = product.name
-  openDropdown.value = null
+function onProductChange(item: any) {
+  item.variant_id = null
+  const p = allProducts.value.find((x: any) => x.id === item.product_id)
+  item.unitPrice = p ? Number(p.price) : 0
 }
 
 function addItem() {
   form.value.items.push({
     product_id: null,
-    productName: '',
-    productSearch: '',
+    variant_id: null,
     unitPrice: 0,
     quantity: 1
   })
@@ -212,8 +217,7 @@ async function loadDeal() {
         const p = allProducts.value.find((x: any) => x.id === i.product_id)
         return {
           product_id: i.product_id,
-          productName: p ? p.name : `Product #${i.product_id}`,
-          productSearch: p ? p.name : '',
+          variant_id: i.variant_id || null,
           unitPrice: p ? Number(p.price) : 0,
           quantity: Number(i.quantity) || 1
         }
@@ -224,8 +228,7 @@ async function loadDeal() {
 
 async function loadDuplicate() {
   if (!props.duplicateFrom) return
-  const src = props.duplicateFrom
-  const res = await invokeSafe<any>('deals:getFull', src.id)
+  const res = await invokeSafe<any>('deals:getFull', props.duplicateFrom.id)
   if (res.ok && res.data) {
     const d = res.data.deal
     form.value = {
@@ -239,8 +242,7 @@ async function loadDuplicate() {
         const p = allProducts.value.find((x: any) => x.id === i.product_id)
         return {
           product_id: i.product_id,
-          productName: p ? p.name : `Product #${i.product_id}`,
-          productSearch: p ? p.name : '',
+          variant_id: i.variant_id || null,
           unitPrice: p ? Number(p.price) : 0,
           quantity: Number(i.quantity) || 1
         }
@@ -266,24 +268,14 @@ async function save() {
     valid_to: form.value.valid_to || null,
     items: form.value.items.map((i: any) => ({
       product_id: Number(i.product_id),
-      variant_id: null,
+      variant_id: i.variant_id ? Number(i.variant_id) : null,
       quantity: Number(i.quantity) || 1
     }))
   }
 
   let res
   if (props.dealId) {
-    res = await invokeSafe<any>('deals:update', props.dealId, {
-      name: payload.name,
-      price: payload.price,
-      image_path: payload.image_path,
-      is_active: payload.is_active,
-      valid_from: payload.valid_from,
-      valid_to: payload.valid_to
-    })
-    if (res.ok) {
-      res = await invokeSafe<any>('deals:replaceItems', props.dealId, payload.items)
-    }
+    res = await invokeSafe<any>('deals:updateFull', props.dealId, payload)
   } else {
     res = await invokeSafe<any>('deals:create', payload)
   }
@@ -294,11 +286,9 @@ async function save() {
 }
 
 onMounted(async () => {
+  await loadCategories()
   await loadProducts()
-  if (props.dealId) {
-    await loadDeal()
-  } else if (props.duplicateFrom) {
-    await loadDuplicate()
-  }
+  if (props.dealId) await loadDeal()
+  else if (props.duplicateFrom) await loadDuplicate()
 })
 </script>

@@ -3,48 +3,33 @@
     <PosTopBar />
 
     <div class="flex-1 overflow-y-auto px-6 lg:px-8 pb-6">
-      <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <div class="flex items-center justify-between mb-5">
         <h1 class="text-2xl font-bold text-nouvo-green">Reports</h1>
-
-        <div class="flex items-center gap-1 bg-white p-1 rounded-xl border border-nouvo-gray-border">
-          <button
-            v-for="p in timeFilters"
-            :key="p.value"
-            class="cursor-pointer px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors"
-            :class="filters.range === p.value ? 'bg-nouvo-green text-white' : 'text-nouvo-gray hover:bg-nouvo-cream'"
-            @click="setRange(p.value)"
-          >{{ p.label }}</button>
-        </div>
+        <ReportFilters v-model="filters" @apply="loadAll" @refresh="loadAll" />
       </div>
 
       <div v-if="loading" class="text-center text-nouvo-gray py-16 text-sm">Loading reports...</div>
 
       <div v-else class="flex flex-col gap-4">
-        <!-- KPIs -->
         <KpiCards :kpis="data.kpis" :currency="currency" />
 
-        <!-- Chart + Score -->
         <div class="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
           <SalesChart :data="data.salesChart" :currency="currency" @refresh="loadAll" />
           <ScoreCard :score="data.score" />
         </div>
 
-        <!-- Radar + Top Products -->
         <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
           <ItemsRadarChart :data="data.itemsPerformance" />
           <TopProductsTable :products="data.topProducts" :currency="currency" />
         </div>
 
-        <!-- Payment + Order Type -->
         <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
           <PaymentBreakdown :data="data.paymentBreakdown" :currency="currency" />
           <OrderTypeAnalysis :data="data.orderTypeAnalysis" :currency="currency" />
         </div>
 
-        <!-- Category Performance -->
         <CategoryPerformance :data="data.categoryPerformance" :currency="currency" />
 
-        <!-- Recent Transactions -->
         <RecentTransactions :transactions="data.recentTransactions" :currency="currency" />
       </div>
     </div>
@@ -54,6 +39,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import PosTopBar from '@/features/pos/components/PosTopBar.vue'
+import ReportFilters from './components/ReportFilters.vue'
 import KpiCards from './components/KpiCards.vue'
 import SalesChart from './components/SalesChart.vue'
 import ScoreCard from './components/ScoreCard.vue'
@@ -70,23 +56,31 @@ const store = useSettingsStore()
 const loading = ref(false)
 const currency = ref('Rs.')
 
+/**
+ * Default range = 'all' → so ALL orders show up.
+ * Change to 'today' if you want today by default.
+ */
 const filters = ref({
-  range: 'today',
+  range: 'all',
   dateFrom: undefined,
   dateTo: undefined,
+  orderType: undefined,
+  paymentMethod: undefined,
   includeVoided: false
 })
 
-const timeFilters = [
-  { value: 'today', label: 'Day' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'year', label: 'Year' },
-  { value: 'all', label: 'All' }
-]
-
 const data = ref<any>({
-  kpis: { revenue: 0, revenueTrend: 0, orderCount: 0, orderTrend: 0, avgOrder: 0, performance: 'No Data' },
+  kpis: {
+    revenue: 0,
+    revenueTrend: 0,
+    orderCount: 0,
+    orderTrend: 0,
+    avgOrder: 0,
+    performance: 'No Data',
+    dineInCount: 0,
+    takeawayCount: 0,
+    deliveryCount: 0
+  },
   salesChart: { format: 'hour', buckets: [], categories: [], series: {} },
   topProducts: [],
   categoryPerformance: [],
@@ -99,31 +93,14 @@ const data = ref<any>({
 
 async function loadAll() {
   loading.value = true
-  try {
-    const res = await invokeSafe<any>('reports:fullDashboard', filters.value)
-    if (res.ok && res.data) {
-      data.value = {
-        kpis: res.data.kpis || data.value.kpis,
-        salesChart: res.data.salesChart || data.value.salesChart,
-        topProducts: res.data.topProducts || [],
-        categoryPerformance: res.data.categoryPerformance || [],
-        paymentBreakdown: res.data.paymentBreakdown || [],
-        orderTypeAnalysis: res.data.orderTypeAnalysis || [],
-        itemsPerformance: res.data.itemsPerformance || [],
-        recentTransactions: res.data.recentTransactions || [],
-        score: res.data.score || data.value.score
-      }
-    }
-  } catch (err) {
-    console.error('[reports] failed', err)
-  } finally {
-    loading.value = false
+  const res = await invokeSafe<any>('reports:fullDashboard', filters.value)
+  loading.value = false
+  if (res.ok && res.data) {
+    data.value = res.data
+    console.log('[reports] loaded with filters:', filters.value)
+  } else if (!res.ok) {
+    console.error('Reports load failed:', (res as any).error?.message)
   }
-}
-
-function setRange(r: string) {
-  filters.value.range = r
-  loadAll()
 }
 
 onMounted(() => {

@@ -2,16 +2,40 @@ import { getDatabase } from '../database/Database'
 import { AuditService } from '../audit/AuditService'
 import { NumberGenerator } from './NumberGenerator'
 import { CreateOrderSchema, OrderFiltersSchema } from './schemas'
-import { OrderHistoryFiltersSchema, VoidOrderSchema } from './historySchemas'
 import { AppError, NotFoundError } from '../utils/errors'
 import { SettingsService } from '../settings/SettingsService'
 import { logger } from '../utils/logger'
 
+export interface OrderRecord {
+  id: number
+  order_number: string
+  invoice_number: string
+  order_type: string
+  customer_name: string
+  customer_phone: string
+  customer_address: string
+  table_number: string
+  subtotal: number
+  discount: number
+  delivery_charge: number
+  tax: number
+  total: number
+  payment_method: string
+  amount_received: number
+  change: number
+  status: string
+  created_at: string
+}
+
 export class OrderService {
+  // ═══════════════════════════════════════════════════════
+  // CREATE ORDER
+  // ═══════════════════════════════════════════════════════
   static createOrder(data: unknown, userId?: number) {
     const parsed = CreateOrderSchema.parse(data)
     const db = getDatabase()
 
+    // Idempotency check
     const existingLog = db.prepare(
       'SELECT id FROM audit_logs WHERE action = ? AND details LIKE ? LIMIT 1'
     ).get('order.created', `%"idempotencyKey":"${parsed.idempotencyKey}"%`) as { id: number } | undefined
@@ -47,8 +71,8 @@ export class OrderService {
           order_number, invoice_number, order_type,
           customer_name, customer_phone, customer_address, table_number,
           subtotal, discount, delivery_charge, tax, total,
-          payment_method, amount_received, change, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', datetime('now', 'localtime'))
+          payment_method, amount_received, change, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')
       `).run(
         orderNumber, invoiceNumber, parsed.orderType,
         parsed.customerName, parsed.customerPhone, parsed.customerAddress, parsed.tableNumber,
@@ -60,23 +84,37 @@ export class OrderService {
       const itemIds: number[] = []
 
       for (const item of parsed.items) {
-        const r = db.prepare(`
+        // Serialize dealChildren into notes
+        const anyItem = item as any
+        const notesPayload = anyItem.dealChildren && anyItem.dealChildren.length > 0
+          ? JSON.stringify({ _type: 'deal_children', children: anyItem.dealChildren })
+          : (item.notes ?? '')
+
+        const itemResult = db.prepare(`
           INSERT INTO order_items (
             order_id, product_id, variant_id, deal_id,
             product_name, variant_name, unit_price, quantity, line_total, notes
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          orderId, item.productId, item.variantId ?? null, item.dealId ?? null,
-          item.productName, item.variantName ?? null,
-          item.unitPrice, item.quantity, item.lineTotal, item.notes ?? ''
+          orderId,
+          item.productId,
+          item.variantId ?? null,
+          item.dealId ?? null,
+          item.productName,
+          item.variantName ?? null,
+          item.unitPrice,
+          item.quantity,
+          item.lineTotal,
+          notesPayload
         )
-        itemIds.push(Number(r.lastInsertRowid))
+        itemIds.push(Number(itemResult.lastInsertRowid))
       }
 
+      // Insert modifiers (only for normal products; deal children live in notes)
       for (let i = 0; i < parsed.items.length; i++) {
         const item = parsed.items[i]
         const orderItemId = itemIds[i]
-        for (const mod of item.modifiers) {
+        for (const mod of item.modifiers || []) {
           db.prepare(`
             INSERT INTO order_item_modifiers (order_item_id, modifier_name, option_name, price)
             VALUES (?, ?, ?, ?)
@@ -108,8 +146,8 @@ export class OrderService {
     const orderSettings = SettingsService.getOrder()
 
     if (parsed.orderType === 'delivery' && orderSettings.require_customer_for_delivery) {
-      if (!parsed.customerPhone || !parsed.customerAddress) {
-        throw new AppError('VALIDATION', 'Delivery requires customer phone and address')
+      if (!parsed.customerName || !parsed.customerPhone || !parsed.customerAddress) {
+        throw new AppError('VALIDATION', 'Delivery requires customer name, phone, and address')
       }
     }
 
@@ -131,6 +169,9 @@ export class OrderService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // GET FULL ORDER (with deal_children parsing)
+  // ═══════════════════════════════════════════════════════
   static getFullOrder(orderId: number) {
     const db = getDatabase()
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any
@@ -138,16 +179,37 @@ export class OrderService {
 
     const items = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(orderId) as any[]
 
-    const itemsWithModifiers = items.map((item) => ({
-      ...item,
-      modifiers: db.prepare('SELECT * FROM order_item_modifiers WHERE order_item_id = ?').all(item.id)
-    }))
+    const itemsWithModifiers = items.map((item) => {
+      let dealChildren: any[] = []
+      let cleanNotes = item.notes || ''
+      try {
+        if (item.notes && typeof item.notes === 'string' && item.notes.trim().startsWith('{')) {
+          const parsedNotes = JSON.parse(item.notes)
+          if (parsedNotes && parsedNotes._type === 'deal_children' && Array.isArray(parsedNotes.children)) {
+            dealChildren = parsedNotes.children
+            cleanNotes = ''
+          }
+        }
+      } catch {
+        // Not JSON — keep notes as-is
+      }
+
+      return {
+        ...item,
+        notes: cleanNotes,
+        deal_children: dealChildren,
+        modifiers: db.prepare('SELECT * FROM order_item_modifiers WHERE order_item_id = ?').all(item.id)
+      }
+    })
 
     const payment = db.prepare('SELECT * FROM payments WHERE order_id = ?').get(orderId)
 
     return { order, items: itemsWithModifiers, payment }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // LIST ORDERS (basic — Phase 7)
+  // ═══════════════════════════════════════════════════════
   static listOrders(filters: unknown) {
     const parsed = OrderFiltersSchema.parse(filters)
     const db = getDatabase()
@@ -167,7 +229,7 @@ export class OrderService {
 
     let sql = 'SELECT * FROM orders'
     if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ')
-    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+    sql += ' ORDER BY invoice_number DESC LIMIT ? OFFSET ?'
     const mainParams = [...params, parsed.limit, parsed.offset]
 
     const rows = db.prepare(sql).all(...mainParams) as any[]
@@ -179,75 +241,101 @@ export class OrderService {
     return { orders: rows, total: countRow.c }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // LIST ORDERS EXTENDED (Phase 9 — history with filters + stats)
+  // ═══════════════════════════════════════════════════════
   static listOrdersExtended(filters: unknown) {
-    const parsed = OrderHistoryFiltersSchema.parse(filters)
     const db = getDatabase()
+    const f: any = filters || {}
 
     const conditions: string[] = []
     const params: any[] = []
 
-    if (parsed.status === 'voided') {
+    // Status filter
+    if (f.status === 'voided') {
       conditions.push("status = 'voided'")
-    } else if (!parsed.includeVoided) {
+    } else if (!f.includeVoided) {
       conditions.push("status != 'voided'")
     }
 
-    if (parsed.range !== 'custom' && parsed.range !== 'all') {
-      const range = this.getRangeDates(parsed.range)
-      if (range.from) { conditions.push('created_at >= ?'); params.push(range.from) }
-      if (range.to) { conditions.push('created_at <= ?'); params.push(range.to) }
-    } else if (parsed.range === 'custom') {
-      if (parsed.dateFrom) { conditions.push('created_at >= ?'); params.push(parsed.dateFrom) }
-      if (parsed.dateTo) { conditions.push('created_at <= ?'); params.push(parsed.dateTo) }
+    // Date range
+    const range = this.resolveRange(f)
+    if (range.from) {
+      conditions.push('created_at >= ?')
+      params.push(range.from)
+    }
+    if (range.to) {
+      conditions.push('created_at <= ?')
+      params.push(range.to)
     }
 
-    if (parsed.orderType) { conditions.push('order_type = ?'); params.push(parsed.orderType) }
-    if (parsed.paymentMethod) { conditions.push('payment_method = ?'); params.push(parsed.paymentMethod) }
-
-    if (parsed.search) {
+    if (f.orderType) {
+      conditions.push('order_type = ?')
+      params.push(f.orderType)
+    }
+    if (f.paymentMethod) {
+      conditions.push('payment_method = ?')
+      params.push(f.paymentMethod)
+    }
+    if (f.search) {
       conditions.push('(order_number LIKE ? OR invoice_number LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ?)')
-      const s = `%${parsed.search}%`
+      const s = `%${f.search}%`
       params.push(s, s, s, s)
     }
 
-    let sql = 'SELECT * FROM orders'
-    if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ')
-    const sortCol = parsed.sortBy === 'order_number' ? 'order_number'
-      : parsed.sortBy === 'total' ? 'total'
-      : 'created_at'
-    sql += ` ORDER BY ${sortCol} ${parsed.sortDir === 'asc' ? 'ASC' : 'DESC'}`
-    sql += ' LIMIT ? OFFSET ?'
+    const whereSql = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : ''
 
-    const mainParams = [...params, parsed.limit, parsed.offset]
-    const orders = db.prepare(sql).all(...mainParams) as any[]
+    // ⭐ STATS — computed BEFORE pagination, over ALL matching orders
+    const statsSql = `
+      SELECT
+        COUNT(*) as count,
+        COALESCE(SUM(total), 0) as revenue,
+        COALESCE(AVG(total), 0) as avg_order
+      FROM orders${whereSql}
+    `
+    const stats = db.prepare(statsSql).get(...params) as {
+      count: number
+      revenue: number
+      avg_order: number
+    }
 
-    let countSql = 'SELECT COUNT(*) as c FROM orders'
-    if (conditions.length > 0) countSql += ' WHERE ' + conditions.join(' AND ')
+    // Paginated rows — sorted by invoice_number DESC (latest first)
+    const limit = Number(f.limit) || 50
+    const offset = Number(f.offset) || 0
+    const rowsSql = `SELECT * FROM orders${whereSql} ORDER BY invoice_number DESC LIMIT ? OFFSET ?`
+    const rows = db.prepare(rowsSql).all(...params, limit, offset) as any[]
+
+    // Count (total matching rows)
+    const countSql = `SELECT COUNT(*) as c FROM orders${whereSql}`
     const countRow = db.prepare(countSql).get(...params) as { c: number }
 
-    let statsSql = `SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as revenue, COALESCE(AVG(total), 0) as avg_order FROM orders`
-    if (conditions.length > 0) statsSql += ' WHERE ' + conditions.join(' AND ')
-    const stats = db.prepare(statsSql).get(...params) as any
-
     return {
-      orders,
+      orders: rows,
       total: countRow.c,
-      limit: parsed.limit,
-      offset: parsed.offset,
+      limit,
+      offset,
       stats: {
-        count: stats.count,
-        revenue: stats.revenue,
-        avg_order: stats.avg_order
+        count: stats.count || 0,
+        revenue: stats.revenue || 0,
+        avg_order: stats.avg_order || 0
       }
     }
   }
 
-  private static getRangeDates(range: string): { from: string | null; to: string | null } {
+  // ═══════════════════════════════════════════════════════
+  // RESOLVE DATE RANGE
+  // ═══════════════════════════════════════════════════════
+  private static resolveRange(f: any): { from: string | null; to: string | null } {
+    if (f.range === 'all') return { from: null, to: null }
+    if (f.range === 'custom') {
+      return { from: f.dateFrom || null, to: f.dateTo || null }
+    }
+
     const now = new Date()
     const start = new Date(now)
     const end = new Date(now)
 
-    switch (range) {
+    switch (f.range) {
       case 'today':
         start.setHours(0, 0, 0, 0)
         end.setHours(23, 59, 59, 999)
@@ -274,34 +362,38 @@ export class OrderService {
         return { from: null, to: null }
     }
 
-    const fmt = (d: Date) => {
-      const pad = (n: number) => String(n).padStart(2, '0')
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-    }
-
-    return { from: fmt(start), to: fmt(end) }
+    return { from: start.toISOString(), to: end.toISOString() }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // VOID ORDER
+  // ═══════════════════════════════════════════════════════
   static voidOrderExtended(data: unknown, userId?: number) {
-    const parsed = VoidOrderSchema.parse(data)
+    const d = data as { orderId: number; reason: string }
     const db = getDatabase()
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(parsed.orderId) as any
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(d.orderId) as any
     if (!order) throw new NotFoundError('Order not found')
     if (order.status === 'voided') throw new AppError('ALREADY_VOIDED', 'Order is already voided')
+    if (!d.reason || d.reason.trim().length < 3) {
+      throw new AppError('REASON_REQUIRED', 'Void reason is required (min 3 chars)')
+    }
 
-    db.prepare("UPDATE orders SET status = 'voided' WHERE id = ?").run(parsed.orderId)
+    db.prepare("UPDATE orders SET status = 'voided' WHERE id = ?").run(d.orderId)
 
     AuditService.log('order.voided', {
-      orderId: parsed.orderId,
+      orderId: d.orderId,
       orderNumber: order.order_number,
-      reason: parsed.reason,
+      reason: d.reason,
       total: order.total
     }, userId)
 
-    return this.getFullOrder(parsed.orderId)
+    return this.getFullOrder(d.orderId)
   }
 
+  // ═══════════════════════════════════════════════════════
+  // RESTORE VOIDED ORDER
+  // ═══════════════════════════════════════════════════════
   static restoreOrder(orderId: number, userId?: number) {
     const db = getDatabase()
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any
@@ -313,6 +405,9 @@ export class OrderService {
     return this.getFullOrder(orderId)
   }
 
+  // ═══════════════════════════════════════════════════════
+  // PREVIEW NEXT NUMBERS
+  // ═══════════════════════════════════════════════════════
   static previewNextNumbers() {
     const db = getDatabase()
     const now = new Date()
@@ -322,12 +417,15 @@ export class OrderService {
 
     const orderRow = db.prepare('SELECT last_number FROM order_counter WHERE prefix = ? AND date_key = ?')
       .get(orderPrefix, dateKey) as { last_number: number } | undefined
+
+    // Invoice counter uses composite key "INV-YYYYMMDD"
+    const invoiceCompositeKey = `${invoicePrefix}-${dateKey}`
     const invoiceRow = db.prepare('SELECT last_number FROM invoice_counter WHERE prefix = ?')
-      .get(invoicePrefix) as { last_number: number } | undefined
+      .get(invoiceCompositeKey) as { last_number: number } | undefined
 
     return {
       orderNumber: `${orderPrefix}-${dateKey}-${String((orderRow?.last_number ?? 0) + 1).padStart(4, '0')}`,
-      invoiceNumber: `${invoicePrefix}-${String((invoiceRow?.last_number ?? 0) + 1).padStart(4, '0')}`
+      invoiceNumber: `${invoicePrefix}-${dateKey}${String((invoiceRow?.last_number ?? 0) + 1).padStart(4, '0')}`
     }
   }
 }

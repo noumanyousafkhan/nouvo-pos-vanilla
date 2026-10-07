@@ -8,6 +8,21 @@ export const OrderItemModifierSchema = z.object({
   price: z.number().min(0).max(1000000)
 })
 
+export const FlavourSelectionSchema = z.object({
+  flavourProductId: z.number().int().positive(),
+  flavourName: z.string().min(1).max(200),
+  quantity: z.number().int().min(1).max(100)
+})
+
+export const DealChildItemSchema = z.object({
+  productId: z.number().int().positive().nullable().optional(),
+  productName: z.string().min(1).max(200),
+  variantName: z.string().max(100).nullable().optional(),
+  quantity: z.number().int().min(1).max(1000),
+  modifiers: z.array(OrderItemModifierSchema).default([]),
+  selectedFlavours: z.array(FlavourSelectionSchema).default([])
+})
+
 export const OrderItemSchema = z.object({
   productId: z.number().int().positive().nullable(),
   productName: z.string().min(1).max(200),
@@ -16,10 +31,11 @@ export const OrderItemSchema = z.object({
   basePrice: z.number().min(0).max(1000000),
   variantAdjust: z.number().min(-1000000).max(1000000).default(0),
   modifiers: z.array(OrderItemModifierSchema).default([]),
+  dealChildren: z.array(DealChildItemSchema).default([]),   // ⭐ ADDED
   quantity: z.number().int().min(1).max(1000),
   unitPrice: z.number().min(0).max(1000000),
   lineTotal: z.number().min(0).max(100000000),
-  notes: z.string().max(500).optional().default(''),
+  notes: z.string().max(2000).optional().default(''),
   dealId: z.number().int().positive().nullable().optional(),
   dealName: z.string().max(200).nullable().optional()
 })

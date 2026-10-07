@@ -1,28 +1,31 @@
 <template>
   <div class="bg-white rounded-2xl h-full flex flex-col p-5 overflow-hidden">
-    <!-- Header — green button toggles fullscreen -->
+    <!-- Header -->
     <header class="flex items-center gap-3 pb-4">
       <button
         type="button"
-        class="cursor-pointer w-9 h-9 rounded-full bg-nouvo-green text-white flex items-center justify-center shrink-0 hover:bg-nouvo-green-dark transition-colors"
+        class="cursor-pointer w-9 h-9 rounded-full bg-nouvo-green text-white flex items-center justify-center shrink-0 hover:bg-nouvo-green-dark transition-colors active:scale-95"
         :title="collapsed ? 'Show cart' : 'Fullscreen (hide cart)'"
         @click="$emit('toggle-collapse')"
       >
+        <!-- Cart OPEN → right arrow (>) -->
         <svg
           v-if="!collapsed"
           width="14" height="14" viewBox="0 0 24 24"
           fill="none" stroke="currentColor" stroke-width="2.5"
           stroke-linecap="round" stroke-linejoin="round"
         >
-          <polyline points="15 18 9 12 15 6"/>
+          <polyline points="9 18 15 12 9 6"/>
         </svg>
+
+        <!-- Cart CLOSED → left arrow (<) -->
         <svg
           v-else
           width="14" height="14" viewBox="0 0 24 24"
           fill="none" stroke="currentColor" stroke-width="2.5"
           stroke-linecap="round" stroke-linejoin="round"
         >
-          <polyline points="9 18 15 12 9 6"/>
+          <polyline points="15 18 9 12 15 6"/>
         </svg>
       </button>
       <div class="flex-1 min-w-0">
@@ -44,6 +47,7 @@
 
     <div class="h-px bg-nouvo-gray-border/60 mb-4"></div>
 
+    <!-- Order type pills -->
     <div class="flex gap-2 mb-4">
       <button
         v-for="t in orderTypes"
@@ -54,17 +58,55 @@
       >{{ t.label }}</button>
     </div>
 
-    <div class="grid grid-cols-2 gap-2.5 mb-4">
+    <!-- Customer name (always optional) + Table (dine-in only) -->
+    <div class="grid grid-cols-2 gap-2.5 mb-3">
       <div>
         <label class="block text-[10px] text-nouvo-gray mb-1">Customer name</label>
-        <input v-model="cart.customerName" type="text" placeholder="Name" class="w-full px-3 py-2 border border-nouvo-gray-border rounded-lg text-[12px] outline-none focus:border-nouvo-green" />
+        <input
+          v-model="cart.customerName"
+          type="text"
+          placeholder="Name"
+          class="w-full px-3 py-2 border border-nouvo-gray-border rounded-lg text-[12px] outline-none focus:border-nouvo-green"
+        />
       </div>
-      <div>
+      <div v-if="cart.orderType === 'dine_in'">
         <label class="block text-[10px] text-nouvo-gray mb-1">Table</label>
-        <input v-model="cart.tableNumber" type="text" placeholder="B12 - Indoor" class="w-full px-3 py-2 border border-nouvo-gray-border rounded-lg text-[12px] outline-none focus:border-nouvo-green" />
+        <input
+          v-model="cart.tableNumber"
+          type="text"
+          placeholder="B12 - Indoor"
+          class="w-full px-3 py-2 border border-nouvo-gray-border rounded-lg text-[12px] outline-none focus:border-nouvo-green"
+        />
       </div>
     </div>
 
+    <!-- Delivery-only fields -->
+    <div v-if="cart.orderType === 'delivery'" class="grid grid-cols-2 gap-2.5 mb-4">
+      <div>
+        <label class="block text-[10px] text-nouvo-gray mb-1">
+          Phone <span class="text-nouvo-red">*</span>
+        </label>
+        <input
+          v-model="cart.customerPhone"
+          type="text"
+          placeholder="03xx-xxxxxxx"
+          class="w-full px-3 py-2 border border-nouvo-gray-border rounded-lg text-[12px] outline-none focus:border-nouvo-green"
+        />
+      </div>
+      <div>
+        <label class="block text-[10px] text-nouvo-gray mb-1">
+          Address <span class="text-nouvo-red">*</span>
+        </label>
+        <input
+          v-model="cart.customerAddress"
+          type="text"
+          placeholder="Street, area, city"
+          class="w-full px-3 py-2 border border-nouvo-gray-border rounded-lg text-[12px] outline-none focus:border-nouvo-green"
+        />
+      </div>
+    </div>
+
+    <!-- Order list -->
     <div class="flex-1 overflow-hidden flex flex-col mb-3">
       <div class="text-[12px] font-semibold text-nouvo-ink mb-2">Order list</div>
       <div v-if="!cart.isEmpty" class="flex-1 overflow-y-auto -mr-2 pr-2">
@@ -77,6 +119,7 @@
       </div>
     </div>
 
+    <!-- Payment Details -->
     <div v-if="!cart.isEmpty" class="pt-3 border-t border-nouvo-gray-border/60">
       <div class="text-[12px] font-semibold text-nouvo-ink mb-2">Payment Details</div>
       <div class="flex justify-between items-center py-1 text-[12px]">
@@ -105,6 +148,7 @@
       </div>
     </div>
 
+    <!-- Place Order button -->
     <button
       :disabled="cart.isEmpty"
       class="cursor-pointer mt-4 bg-nouvo-green text-white border-none rounded-full h-12 px-2 flex items-center gap-3 transition-all hover:bg-nouvo-green-dark disabled:bg-gray-300 disabled:cursor-not-allowed"

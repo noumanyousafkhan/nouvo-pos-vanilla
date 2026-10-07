@@ -188,9 +188,6 @@ async function placeOrder() {
   }
 }
 
-/**
- * Reprint click → PREVIEW only (no actual print).
- */
 async function onReprint(type: string) {
   if (!lastOrderId.value) return
   const res = await invokeSafe<any>('print:preview', {
@@ -207,9 +204,6 @@ async function onReprint(type: string) {
   }
 }
 
-/**
- * Print click in preview modal → actual print.
- */
 async function onPrintNow() {
   if (!lastOrderId.value) return
   await invokeSafe<any>('print:receipt', {

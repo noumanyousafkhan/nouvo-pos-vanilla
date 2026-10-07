@@ -42,20 +42,55 @@
             Items ({{ items.length }})
           </div>
           <div class="space-y-2">
-            <div v-for="item in items" :key="item.id" class="bg-nouvo-cream rounded-xl p-3 flex justify-between items-start gap-3">
-              <div class="flex-1">
-                <div class="text-[13px] font-semibold text-nouvo-ink">
-                  {{ item.product_name }}
-                  <span v-if="item.variant_name" class="text-nouvo-gray font-normal">({{ item.variant_name }})</span>
-                </div>
-                <div v-if="item.modifiers && item.modifiers.length" class="mt-1 space-y-0.5">
-                  <div v-for="(m, i) in item.modifiers" :key="i" class="text-[11px] text-nouvo-gray flex items-center gap-1">
-                    <span class="text-nouvo-green">+</span>
-                    <span>{{ m.option_name }}</span>
+            <div v-for="item in items" :key="item.id" class="bg-nouvo-cream rounded-xl p-3">
+              <div class="flex justify-between items-start gap-3">
+                <div class="flex-1">
+                  <div class="text-[13px] font-semibold text-nouvo-ink">
+                    {{ item.product_name }}
+                    <span v-if="item.variant_name" class="text-nouvo-gray font-normal">({{ item.variant_name }})</span>
+                  </div>
+
+                  <!-- DEAL CHILDREN (structured) -->
+                  <div v-if="item.deal_id && item.deal_children && item.deal_children.length > 0" class="mt-2 space-y-1.5">
+                    <div v-for="(child, ci) in item.deal_children" :key="ci" class="ml-1">
+                      <div class="text-[12px] font-semibold text-nouvo-ink flex items-center gap-1">
+                        <span class="text-nouvo-green">+</span>
+                        <span>{{ child.productName }}<span v-if="child.variantName" class="text-nouvo-gray font-normal"> ({{ child.variantName }})</span></span>
+                      </div>
+
+                      <div
+                        v-for="(f, fi) in (child.selectedFlavours || [])"
+                        :key="'f' + fi"
+                        class="ml-4 text-[11px] text-nouvo-gray flex items-center gap-1"
+                      >
+                        <span class="text-nouvo-green">-</span>
+                        <span>{{ f.flavourName }}<span v-if="f.quantity > 1"> ×{{ f.quantity }}</span></span>
+                      </div>
+
+                      <div
+                        v-for="(m, mi) in (child.modifiers || [])"
+                        :key="'m' + mi"
+                        class="ml-4 text-[11px] text-nouvo-gray flex items-center justify-between"
+                      >
+                        <span>+ {{ m.optionName }}</span>
+                        <span v-if="Number(m.price) > 0" class="font-semibold text-nouvo-green">
+                          +Rs. {{ Number(m.price).toFixed(0) }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- FALLBACK: old orders — flat modifiers -->
+                  <div v-else-if="item.modifiers && item.modifiers.length" class="mt-2 space-y-0.5">
+                    <div v-for="(m, i) in item.modifiers" :key="i" class="text-[11px] text-nouvo-gray flex items-center gap-1 ml-1">
+                      <span class="text-nouvo-green">+</span>
+                      <span>{{ m.option_name }}</span>
+                    </div>
                   </div>
                 </div>
+
+                <div class="text-[13px] font-bold text-nouvo-green whitespace-nowrap">×{{ item.quantity }}</div>
               </div>
-              <div class="text-[13px] font-bold text-nouvo-green whitespace-nowrap">×{{ item.quantity }}</div>
             </div>
           </div>
         </div>
@@ -168,9 +203,6 @@ async function load() {
   }
 }
 
-/**
- * Reprint click → PREVIEW only (no actual print).
- */
 async function reprint(type: 'customer' | 'kitchen') {
   const res = await invokeSafe<any>('print:preview', {
     orderId: props.order.id,
@@ -178,20 +210,18 @@ async function reprint(type: 'customer' | 'kitchen') {
     copies: 1,
     isReprint: true
   })
+
   if (res.ok && (res.data as any)?.preview) {
     previewText.value = (res.data as any).preview
     previewType.value = type
   } else if (res.ok) {
-    previewText.value = '[No preview available]'
+    previewText.value = `[No preview available]`
     previewType.value = type
   } else {
     alert('Preview failed: ' + ((res as any).error?.message || 'Unknown'))
   }
 }
 
-/**
- * Print click in preview modal → actual print.
- */
 async function onPrintNow() {
   if (!previewText.value) return
   await invokeSafe<any>('print:receipt', {
@@ -219,11 +249,6 @@ async function confirmVoid() {
   } else {
     voidError.value = (res as any).error?.message || 'Void failed'
   }
-}
-
-async function restore() {
-  const res = await invokeSafe<any>('orders:restore', props.order.id)
-  if (res.ok) emit('updated')
 }
 
 function formatDateTime(iso: string) {

@@ -22,19 +22,12 @@ export class ReceiptFormatter {
       lines.push({ type: 'feed', lines: 1 })
     }
 
-    if (b.name) {
-      lines.push({ type: 'text', text: b.name, align: 'center', bold: true, size: 'large' })
-    }
-    if (b.slogan && b.slogan.trim() && b.slogan !== 'VP') {
-      lines.push({ type: 'text', text: b.slogan, align: 'center', size: 'small' })
-    }
-    if (b.address) {
-      lines.push({ type: 'text', text: b.address, align: 'center', size: 'small' })
-    }
+    if (b.name) lines.push({ type: 'text', text: b.name, align: 'center', bold: true, size: 'large' })
+    if (b.slogan && b.slogan.trim() && b.slogan !== 'VP') lines.push({ type: 'text', text: b.slogan, align: 'center', size: 'small' })
+    if (b.address) lines.push({ type: 'text', text: b.address, align: 'center', size: 'small' })
+
     const phones = [b.phone_1, b.phone_2].filter(Boolean).join(' / ')
-    if (phones) {
-      lines.push({ type: 'text', text: `Ph: ${phones}`, align: 'center', size: 'small' })
-    }
+    if (phones) lines.push({ type: 'text', text: `Ph: ${phones}`, align: 'center', size: 'small' })
 
     lines.push({ type: 'divider' })
     lines.push({ type: 'text', text: 'SALE INVOICE', align: 'center', bold: true })
@@ -65,45 +58,32 @@ export class ReceiptFormatter {
       const productName = String(item.product_name || '').trim()
       const nameLines = this.wrapText(productName, LEFT_WIDTH)
 
-      lines.push({
-        type: 'columns',
-        left: this.padRight(nameLines[0] || '', LEFT_WIDTH),
-        right: rightBlock
-      })
-
+      lines.push({ type: 'columns', left: this.padRight(nameLines[0] || '', LEFT_WIDTH), right: rightBlock })
       for (let i = 1; i < nameLines.length; i++) {
         lines.push({ type: 'text', text: nameLines[i] })
       }
 
-      // Variant (only if NOT a deal)
       if (item.variant_name && !isDeal) {
         lines.push({ type: 'text', text: `(${item.variant_name})`, size: 'small' })
       }
-
-      // Unit price line (only if qty > 1 AND not a deal)
       if (qty > 1 && !isDeal) {
         lines.push({ type: 'text', text: `  @ ${unitPrice.toFixed(2)} each`, size: 'small' })
       }
 
-      // Children of a deal OR modifiers of a product — as "  + Name"
-      const childOrMods = item.modifiers || []
-      for (const mod of childOrMods) {
-        const optionName = String(mod.option_name || '')
-        const modPrice = Number(mod.price) > 0 ? `+${Number(mod.price).toFixed(2)}` : ''
-        lines.push({
-          type: 'columns',
-          left: `  + ${optionName}`,
-          right: modPrice,
-          size: 'small'
-        })
+      // DEAL CHILDREN
+      if (isDeal) {
+        this.formatDealChildren(lines, item)
+      } else {
+        // Normal modifiers
+        for (const m of (item.modifiers || [])) {
+          const modPrice = Number(m.price) > 0 ? `+${Number(m.price).toFixed(2)}` : ''
+          lines.push({ type: 'columns', left: `  + ${m.option_name}`, right: modPrice, size: 'small' })
+        }
+        if (item.notes && String(item.notes).trim()) {
+          lines.push({ type: 'text', text: `  > ${item.notes}`, size: 'small' })
+        }
       }
 
-      // Notes — only show for normal products (deal child notes suppressed)
-      if (!isDeal && item.notes && String(item.notes).trim()) {
-        lines.push({ type: 'text', text: `  > ${item.notes}`, size: 'small' })
-      }
-
-      // Blank line between items
       lines.push({ type: 'feed', lines: 1 })
     }
     // ================= /ITEMS =================
@@ -171,12 +151,17 @@ export class ReceiptFormatter {
         size: 'large'
       })
 
-      for (const mod of item.modifiers || []) {
-        lines.push({ type: 'text', text: `     + ${mod.option_name}`, size: 'large' })
-      }
-
-      if (!isDeal && item.notes && String(item.notes).trim()) {
-        lines.push({ type: 'text', text: `     > ${item.notes}`, size: 'large', bold: true })
+      // DEAL CHILDREN
+      if (isDeal) {
+        this.formatDealChildren(lines, item, true)
+      } else {
+        // Normal modifiers
+        for (const mod of (item.modifiers || [])) {
+          lines.push({ type: 'text', text: `     + ${mod.option_name}`, size: 'large' })
+        }
+        if (item.notes && String(item.notes).trim()) {
+          lines.push({ type: 'text', text: `     > ${item.notes}`, size: 'large', bold: true })
+        }
       }
 
       lines.push({ type: 'feed', lines: 1 })
@@ -189,6 +174,65 @@ export class ReceiptFormatter {
     lines.push({ type: 'text', text: '** KITCHEN COPY **', align: 'center', bold: true })
     lines.push({ type: 'feed', lines: 4 })
     return lines
+  }
+
+  /**
+   * Format deal children — shared by customer + kitchen.
+   * Shows: "+ Product Name" then flavours "  - Flavour" then modifiers "  + Topping".
+   */
+  private static formatDealChildren(lines: any[], item: any, isKitchen = false) {
+    const children = item.deal_children || []
+
+    // If children missing (older orders), fallback to modifiers as flat list
+    if (children.length === 0) {
+      const fallbackMods = item.modifiers || []
+      for (const m of fallbackMods) {
+        const modPrice = Number(m.price) > 0 ? `+${Number(m.price).toFixed(2)}` : ''
+        if (isKitchen) {
+          lines.push({ type: 'text', text: `     + ${m.option_name}`, size: 'large' })
+        } else {
+          lines.push({ type: 'columns', left: `  + ${m.option_name}`, right: modPrice, size: 'small' })
+        }
+      }
+      return
+    }
+
+    for (const child of children) {
+      const childName = child.variantName
+        ? `${child.productName} (${child.variantName})`
+        : child.productName
+
+      if (isKitchen) {
+        lines.push({ type: 'text', text: `     + ${childName}`, size: 'large' })
+      } else {
+        lines.push({ type: 'text', text: `  + ${childName}`, size: 'small' })
+      }
+
+      // Flavours (indented deeper)
+      for (const f of (child.selectedFlavours || [])) {
+        const qtyLabel = f.quantity > 1 ? ` ×${f.quantity}` : ''
+        if (isKitchen) {
+          lines.push({ type: 'text', text: `         - ${f.flavourName}${qtyLabel}`, size: 'large' })
+        } else {
+          lines.push({ type: 'text', text: `      - ${f.flavourName}${qtyLabel}`, size: 'small' })
+        }
+      }
+
+      // Modifiers (toppings/add-ons)
+      for (const m of (child.modifiers || [])) {
+        if (isKitchen) {
+          lines.push({ type: 'text', text: `         + ${m.optionName}`, size: 'large' })
+        } else {
+          const modPrice = Number(m.price) > 0 ? `+${Number(m.price).toFixed(2)}` : ''
+          lines.push({
+            type: 'columns',
+            left: `      + ${m.optionName}`,
+            right: modPrice,
+            size: 'small'
+          })
+        }
+      }
+    }
   }
 
   private static padRight(text: string, width: number): string {

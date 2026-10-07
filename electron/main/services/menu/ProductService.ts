@@ -13,11 +13,18 @@ export interface Product {
   has_variants: number
   has_modifiers: number
   is_deleted: number
+  is_deal_only: number
   created_at: string
 }
 
 export class ProductService {
-  static list(categoryId?: number | null, includeInactive = false): Product[] {
+  /**
+   * List products.
+   * @param categoryId - filter by category
+   * @param includeInactive - include is_active=0 products
+   * @param includeDealOnly - include is_deal_only=1 products (used by Deal Editor only)
+   */
+  static list(categoryId?: number | null, includeInactive = false, includeDealOnly = false): Product[] {
     const db = getDatabase()
     let sql = 'SELECT * FROM products WHERE is_deleted = 0'
     const params: any[] = []
@@ -28,6 +35,10 @@ export class ProductService {
     }
     if (!includeInactive) {
       sql += ' AND is_active = 1'
+    }
+    // By default exclude deal-only products (they appear only in Deal Editor)
+    if (!includeDealOnly) {
+      sql += ' AND (is_deal_only IS NULL OR is_deal_only = 0)'
     }
     sql += ' ORDER BY name'
 
@@ -46,8 +57,8 @@ export class ProductService {
     const db = getDatabase()
 
     const result = db.prepare(`
-      INSERT INTO products (category_id, name, price, image_path, is_active, has_variants, has_modifiers)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO products (category_id, name, price, image_path, is_active, has_variants, has_modifiers, is_deal_only)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       parsed.category_id,
       parsed.name,
@@ -55,7 +66,8 @@ export class ProductService {
       parsed.image_path,
       parsed.is_active ? 1 : 0,
       parsed.has_variants ? 1 : 0,
-      parsed.has_modifiers ? 1 : 0
+      parsed.has_modifiers ? 1 : 0,
+      (parsed as any).is_deal_only ? 1 : 0
     )
 
     const created = this.get(Number(result.lastInsertRowid))
@@ -96,10 +108,7 @@ export class ProductService {
   static toggleActive(id: number, userId?: number): Product {
     const db = getDatabase()
     const product = this.get(id)
-    db.prepare('UPDATE products SET is_active = ? WHERE id = ?').run(
-      product.is_active ? 0 : 1,
-      id
-    )
+    db.prepare('UPDATE products SET is_active = ? WHERE id = ?').run(product.is_active ? 0 : 1, id)
     AuditService.log('menu.product.toggled', { id, active: !product.is_active }, userId)
     return this.get(id)
   }
@@ -153,7 +162,6 @@ export class ProductService {
         productId = created.id
       }
 
-      // Replace variants
       db.prepare('DELETE FROM product_variants WHERE product_id = ?').run(productId)
       for (const v of parsed.variants) {
         db.prepare(`
@@ -162,7 +170,6 @@ export class ProductService {
         `).run(productId, v.name, v.price_adjust, v.is_default ? 1 : 0)
       }
 
-      // Replace modifiers
       db.prepare('DELETE FROM product_modifiers WHERE product_id = ?').run(productId)
       for (const m of parsed.modifiers) {
         const modResult = db.prepare(`

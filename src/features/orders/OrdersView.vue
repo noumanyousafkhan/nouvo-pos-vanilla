@@ -1,11 +1,8 @@
 <template>
   <div class="h-screen flex flex-col bg-nouvo-cream overflow-hidden">
-    <!-- Top Bar -->
     <header class="h-16 bg-nouvo-green text-white flex items-center justify-between px-6 shrink-0">
       <div class="flex items-center gap-3 shrink-0">
-        <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold">
-          N
-        </div>
+        <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold">N</div>
         <span class="font-bold tracking-wide text-[14px]">NOUVO POS</span>
       </div>
 
@@ -36,7 +33,6 @@
       </div>
     </header>
 
-    <!-- Header Stats -->
     <div class="px-6 pt-4 pb-2 flex items-center justify-between shrink-0">
       <h1 class="text-xl font-bold text-nouvo-green">Order History</h1>
       <div class="flex items-center gap-6 text-[13px]">
@@ -55,12 +51,10 @@
       </div>
     </div>
 
-    <!-- Filters -->
     <div class="px-6 pt-2">
       <OrdersFilters v-model="filters" @apply="loadOrders" />
     </div>
 
-    <!-- Orders List -->
     <div class="flex-1 overflow-hidden px-6 pb-6 pt-4">
       <div class="bg-white rounded-2xl border-2 border-nouvo-green/30 h-full flex flex-col overflow-hidden">
         <div v-if="store.loading" class="flex-1 flex items-center justify-center text-nouvo-gray text-sm">
@@ -71,11 +65,10 @@
           <div class="text-sm font-semibold">No orders found</div>
           <div class="text-xs mt-1">Try changing filters</div>
         </div>
-        <div v-else class="flex-1 overflow-y-auto cart-scroll">
+        <div v-else class="flex-1 overflow-y-auto">
           <table class="w-full text-[13px]">
             <thead class="sticky top-0 bg-nouvo-cream z-10">
               <tr>
-                <th class="text-left px-4 py-3 text-[10px] font-bold text-nouvo-green uppercase tracking-wider">Order #</th>
                 <th class="text-left px-4 py-3 text-[10px] font-bold text-nouvo-green uppercase tracking-wider">Invoice #</th>
                 <th class="text-left px-4 py-3 text-[10px] font-bold text-nouvo-green uppercase tracking-wider">Date</th>
                 <th class="text-left px-4 py-3 text-[10px] font-bold text-nouvo-green uppercase tracking-wider">Type</th>
@@ -89,47 +82,52 @@
               <tr
                 v-for="order in store.orders"
                 :key="order.id"
-                class="cursor-pointer border-t border-nouvo-green/10 hover:bg-nouvo-cream/50 transition-colors"
+                class="border-t border-nouvo-gray-border/40 hover:bg-nouvo-cream/40 cursor-pointer transition-colors"
                 @click="openDetail(order)"
               >
-                <td class="px-4 py-3 font-mono font-semibold text-nouvo-green">{{ order.order_number }}</td>
-                <td class="px-4 py-3 font-mono text-nouvo-gray">{{ order.invoice_number }}</td>
-                <td class="px-4 py-3">{{ formatDateTime(order.created_at) }}</td>
+                <td class="px-4 py-3 font-mono text-nouvo-green font-semibold">{{ order.invoice_number }}</td>
+                <td class="px-4 py-3 text-nouvo-ink">{{ formatDateTime(order.created_at) }}</td>
                 <td class="px-4 py-3">
-                  <span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold" :class="typeBadge(order.order_type)">
+                  <span class="text-[10px] font-bold px-2 py-1 rounded" :class="typeBadge(order.order_type)">
                     {{ formatOrderType(order.order_type) }}
                   </span>
                 </td>
-                <td class="px-4 py-3">{{ order.customer_name || '—' }}</td>
-                <td class="px-4 py-3">
-                  <span class="text-[12px]">{{ order.payment_method === 'cash' ? '💵 Cash' : '💳 Card' }}</span>
+                <td class="px-4 py-3 text-nouvo-ink">
+                  <span v-if="order.customer_name">{{ order.customer_name }}</span>
+                  <span v-else class="text-nouvo-gray">—</span>
                 </td>
-                <td class="px-4 py-3 text-right font-bold text-nouvo-ink">{{ currency }} {{ order.total.toFixed(1) }}</td>
+                <td class="px-4 py-3">
+                  <span class="text-[11px] font-semibold text-nouvo-ink">
+                    {{ order.payment_method === 'cash' ? '💵 Cash' : '💳 Card' }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-right font-bold text-nouvo-green">
+                  {{ currency }} {{ Number(order.total).toFixed(1) }}
+                </td>
                 <td class="px-4 py-3 text-center">
-                  <span class="inline-block px-2 py-0.5 rounded text-[10px] font-semibold" :class="statusBadge(order.status)">
+                  <span class="text-[10px] font-bold px-2 py-1 rounded" :class="statusBadge(order.status)">
                     {{ order.status }}
                   </span>
                 </td>
               </tr>
             </tbody>
           </table>
-        </div>
 
-        <!-- Pagination -->
-        <div v-if="store.total > filters.limit" class="flex items-center justify-between px-4 py-3 border-t border-nouvo-green/20">
-          <button
-            :disabled="filters.offset === 0"
-            class="cursor-pointer px-4 py-1.5 rounded-lg text-[12px] font-semibold border border-nouvo-gray-border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-nouvo-cream transition-colors"
-            @click="prevPage"
-          >← Prev</button>
-          <span class="text-[12px] text-nouvo-gray">
-            Page {{ currentPage }} of {{ totalPages }}
-          </span>
-          <button
-            :disabled="filters.offset + filters.limit >= store.total"
-            class="cursor-pointer px-4 py-1.5 rounded-lg text-[12px] font-semibold border border-nouvo-gray-border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-nouvo-cream transition-colors"
-            @click="nextPage"
-          >Next →</button>
+          <div v-if="store.total > filters.limit" class="flex items-center justify-center gap-3 p-4 border-t border-nouvo-gray-border/40">
+            <button
+              :disabled="filters.offset === 0"
+              class="cursor-pointer px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-nouvo-cream text-nouvo-green disabled:opacity-40 disabled:cursor-not-allowed"
+              @click="prevPage"
+            >← Prev</button>
+            <span class="text-[12px] text-nouvo-gray">
+              Page {{ currentPage }} of {{ totalPages }}
+            </span>
+            <button
+              :disabled="filters.offset + filters.limit >= store.total"
+              class="cursor-pointer px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-nouvo-cream text-nouvo-green disabled:opacity-40 disabled:cursor-not-allowed"
+              @click="nextPage"
+            >Next →</button>
+          </div>
         </div>
       </div>
     </div>
@@ -154,6 +152,7 @@ import OrderDetailModal from './components/OrderDetailModal.vue'
 const router = useRouter()
 const auth = useAuthStore()
 const store = useOrdersStore()
+
 const selectedOrder = ref<any>(null)
 const currency = ref('Rs.')
 
@@ -165,39 +164,29 @@ const userRole = computed(() => {
 })
 
 const navTabs = [
-  { path: '/home', label: 'Dashboard', query: {} },
-  { path: '/orders', label: 'Orders', query: {} },
-  { path: '/menu', label: 'Menu', query: {} },
-  { path: '/reports', label: 'Reports', query: { from: 'dashboard' } },
-  { path: '/settings', label: 'Settings', query: {} }
+  { path: '/home', label: 'Dashboard' },
+  { path: '/orders', label: 'Orders' },
+  { path: '/menu', label: 'Menu' },
+  { path: '/reports', label: 'Reports' },
+  { path: '/settings', label: 'Settings' }
 ]
 
-function navigate(tab: any) {
-  router.push({ path: tab.path, query: tab.query })
-}
-
-async function logout() {
-  await auth.logout()
-  router.push('/login')
-}
-
-const filters = ref({
+const filters = ref<any>({
   search: '',
   range: 'all',
-  dateFrom: undefined,
-  dateTo: undefined,
   orderType: undefined,
   paymentMethod: undefined,
   status: 'completed',
   includeVoided: false,
   limit: 50,
-  offset: 0,
-  sortBy: 'created_at',
-  sortDir: 'desc'
+  offset: 0
 })
 
 const currentPage = computed(() => Math.floor(filters.value.offset / filters.value.limit) + 1)
 const totalPages = computed(() => Math.max(1, Math.ceil(store.total / filters.value.limit)))
+
+function navigate(tab: any) { router.push(tab.path) }
+async function logout() { await auth.logout(); router.push('/login') }
 
 async function loadOrders() {
   filters.value.offset = 0
@@ -256,19 +245,3 @@ onMounted(async () => {
   await store.load(filters.value)
 })
 </script>
-
-<style scoped>
-.cart-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-.cart-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.cart-scroll::-webkit-scrollbar-thumb {
-  background: rgba(2, 87, 38, 0.2);
-  border-radius: 3px;
-}
-.cart-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(2, 87, 38, 0.4);
-}
-</style>

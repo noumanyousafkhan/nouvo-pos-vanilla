@@ -9,6 +9,7 @@ export function registerDealsIpc(): void {
   handle('deals:getFull', (id: number) => DealService.getFull(id))
   handle('deals:create', (data, userId) => DealService.create(data, userId))
   handle('deals:update', (id, data, userId) => DealService.update(id, data, userId))
+  handle('deals:updateFull', (id, data, userId) => DealService.updateFull(id, data, userId))
   handle('deals:replaceItems', (id, items, userId) =>
     DealService.replaceItems(id, items, userId)
   )

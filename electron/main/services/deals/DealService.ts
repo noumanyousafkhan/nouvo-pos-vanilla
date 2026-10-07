@@ -1,6 +1,6 @@
 import { getDatabase } from '../database/Database'
 import { AuditService } from '../audit/AuditService'
-import { DealSchema, DealUpdateSchema } from './schemas'
+import { DealSchema, DealUpdateSchema, FullDealSchema } from './schemas'
 import { NotFoundError, AppError } from '../utils/errors'
 
 export interface Deal {
@@ -74,6 +74,60 @@ export class DealService {
     return true
   }
 
+  /**
+   * Calculate the normal total price of a deal (without deal discount).
+   */
+  static calculateNormalTotal(
+    items: Array<{ product_id: number; variant_id?: number | null; quantity: number }>
+  ): number {
+    const db = getDatabase()
+    let total = 0
+
+    for (const item of items) {
+      const product = db.prepare(
+        'SELECT id, price FROM products WHERE id = ? AND is_deleted = 0'
+      ).get(item.product_id) as { id: number; price: number } | undefined
+
+      if (!product) {
+        throw new AppError('PRODUCT_NOT_FOUND', `Product ${item.product_id} not found`)
+      }
+
+      let unitPrice = Number(product.price) || 0
+
+      if (item.variant_id) {
+        const variant = db.prepare(
+          'SELECT id, price_adjust FROM product_variants WHERE id = ? AND product_id = ?'
+        ).get(item.variant_id, item.product_id) as { id: number; price_adjust: number } | undefined
+
+        if (!variant) {
+          throw new AppError('VARIANT_NOT_FOUND', `Variant ${item.variant_id} not found for product ${item.product_id}`)
+        }
+
+        unitPrice += Number(variant.price_adjust) || 0
+      }
+
+      total += unitPrice * (Number(item.quantity) || 1)
+    }
+
+    return Math.round(total * 100) / 100
+  }
+
+  /**
+   * Validate deal price against normal total.
+   */
+  static validateDealPrice(
+    dealPrice: number,
+    items: Array<{ product_id: number; variant_id?: number | null; quantity: number }>
+  ): void {
+    const normalTotal = this.calculateNormalTotal(items)
+    if (dealPrice > normalTotal) {
+      throw new AppError(
+        'DEAL_PRICE_EXCEEDS_NORMAL',
+        `Deal price (Rs. ${dealPrice.toFixed(2)}) cannot exceed normal total (Rs. ${normalTotal.toFixed(2)})`
+      )
+    }
+  }
+
   static create(data: unknown, userId?: number) {
     const parsed = DealSchema.parse(data)
     const db = getDatabase()
@@ -84,6 +138,9 @@ export class DealService {
       ).get(item.product_id)
       if (!product) throw new AppError('PRODUCT_NOT_FOUND', `Product ${item.product_id} not found`)
     }
+
+    // 🔒 BACKEND VALIDATION
+    this.validateDealPrice(Number(parsed.price), parsed.items)
 
     const tx = db.transaction(() => {
       const result = db.prepare(`
@@ -123,6 +180,15 @@ export class DealService {
     const fields: string[] = []
     const values: any[] = []
 
+    if (parsed.price !== undefined) {
+      const existingItems = this.getItems(id) as Array<{
+        product_id: number
+        variant_id: number | null
+        quantity: number
+      }>
+      this.validateDealPrice(Number(parsed.price), existingItems)
+    }
+
     for (const [k, v] of Object.entries(parsed)) {
       fields.push(`${k} = ?`)
       values.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
@@ -137,11 +203,71 @@ export class DealService {
     return this.getFull(id)
   }
 
+  /**
+   * Full update — deal meta + items in a single transaction.
+   * Validates deal price against the NEW items (not old ones).
+   */
+  static updateFull(id: number, data: unknown, userId?: number) {
+    const parsed = FullDealSchema.parse(data)
+    const db = getDatabase()
+
+    this.get(id) // ensure exists
+
+    for (const item of parsed.items) {
+      const product = db.prepare(
+        'SELECT id FROM products WHERE id = ? AND is_deleted = 0'
+      ).get(item.product_id)
+      if (!product) throw new AppError('PRODUCT_NOT_FOUND', `Product ${item.product_id} not found`)
+    }
+
+    // 🔒 BACKEND VALIDATION — against NEW items
+    this.validateDealPrice(Number(parsed.price), parsed.items)
+
+    const tx = db.transaction(() => {
+      db.prepare(`
+        UPDATE deals SET
+          name = ?,
+          price = ?,
+          image_path = ?,
+          is_active = ?,
+          valid_from = ?,
+          valid_to = ?
+        WHERE id = ?
+      `).run(
+        parsed.name,
+        parsed.price,
+        parsed.image_path || '',
+        parsed.is_active ? 1 : 0,
+        parsed.valid_from ?? null,
+        parsed.valid_to ?? null,
+        id
+      )
+
+      db.prepare('DELETE FROM deal_items WHERE deal_id = ?').run(id)
+      for (const item of parsed.items) {
+        db.prepare(`
+          INSERT INTO deal_items (deal_id, product_id, variant_id, quantity)
+          VALUES (?, ?, ?, ?)
+        `).run(id, item.product_id, item.variant_id ?? null, item.quantity)
+      }
+    })
+    tx()
+
+    AuditService.log('deal.updated', {
+      id,
+      changes: { name: parsed.name, price: parsed.price },
+      itemsCount: parsed.items.length
+    }, userId)
+
+    return this.getFull(id)
+  }
+
   static replaceItems(dealId: number, items: unknown[], userId?: number) {
     const db = getDatabase()
-    this.get(dealId)
+    const deal = this.get(dealId)
 
     const validated = items.map((i) => DealSchema.shape.items.element.parse(i))
+    this.validateDealPrice(Number(deal.price), validated)
 
     const tx = db.transaction(() => {
       db.prepare('DELETE FROM deal_items WHERE deal_id = ?').run(dealId)
@@ -168,10 +294,7 @@ export class DealService {
   static toggleActive(id: number, userId?: number): Deal {
     const db = getDatabase()
     const deal = this.get(id)
-    db.prepare('UPDATE deals SET is_active = ? WHERE id = ?').run(
-      deal.is_active ? 0 : 1,
-      id
-    )
+    db.prepare('UPDATE deals SET is_active = ? WHERE id = ?').run(deal.is_active ? 0 : 1, id)
     AuditService.log('deal.toggled', { id, active: !deal.is_active }, userId)
     return this.get(id)
   }
@@ -205,7 +328,6 @@ export class DealService {
       return {
         productId: product.id,
         productName: product.name,
-        image_path: product.image_path,
         variantId: item.variant_id,
         variantName,
         quantity: item.quantity,
@@ -229,9 +351,7 @@ export class DealService {
         quantity: e.quantity,
         normalUnitPrice: e.normalUnitPrice,
         allocatedUnitPrice: equal / e.quantity,
-        allocatedLineTotal: i === expanded.length - 1
-          ? deal.price - equal * (expanded.length - 1)
-          : equal
+        allocatedLineTotal: i === expanded.length - 1 ? deal.price - equal * (expanded.length - 1) : equal
       }))
     }
 

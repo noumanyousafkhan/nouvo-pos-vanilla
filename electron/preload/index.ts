@@ -23,13 +23,24 @@ const INVOKE_CHANNELS = [
   'menu:images:pick', 'menu:images:delete',
   // Deals
   'deals:list', 'deals:get', 'deals:getFull', 'deals:create',
-  'deals:update', 'deals:replaceItems', 'deals:delete',
+  'deals:update', 'deals:updateFull', 'deals:replaceItems', 'deals:delete',
   'deals:toggle', 'deals:expandToCart',
   // Orders
-  'orders:create', 'orders:get', 'orders:list', 'orders:previewNextNumbers',
-  'orders:void', 'orders:restore',
+  'orders:create', 'orders:get', 'orders:list', 'orders:listExtended',
+  'orders:previewNextNumbers', 'orders:void', 'orders:restore',
   // Printing
-  'print:preview', 'print:receipt', 'print:test', 'print:isAvailable'
+  'print:preview', 'print:receipt', 'print:test', 'print:isAvailable',
+  // Reports ⭐ ADDED
+  'reports:kpis', 'reports:salesChart', 'reports:topProducts',
+  'reports:categoryPerformance', 'reports:paymentBreakdown',
+  'reports:itemsPerformance', 'reports:recentTransactions',
+  'reports:score', 'reports:fullDashboard',
+  // Backup
+  'backup:list', 'backup:create', 'backup:delete', 'backup:validate',
+  'backup:restore', 'backup:stats', 'backup:cleanup',
+  // Export
+  'export:orders', 'export:products', 'export:categories',
+  'export:payments', 'export:report', 'export:fullBackup'
 ] as const
 
 type InvokeChannel = typeof INVOKE_CHANNELS[number]
@@ -45,3 +56,4 @@ const api = {
 
 contextBridge.exposeInMainWorld('nouvo', api)
 export type NouvoApi = typeof api
+

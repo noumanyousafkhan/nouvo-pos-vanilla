@@ -1,6 +1,7 @@
 <template>
   <header class="flex items-center justify-between px-6 lg:px-8 pt-6 pb-4 shrink-0">
     <div class="flex items-center gap-4">
+      <!-- Logo + Business Name (NOT clickable) -->
       <div class="flex items-center gap-3">
         <img
           v-if="store.business.logo_path"
@@ -8,6 +9,7 @@
           alt="Logo"
           class="h-12 w-12 object-contain shrink-0"
         />
+
         <div class="leading-none text-left">
           <div class="text-[14px] font-black text-nouvo-green tracking-[1.5px] uppercase">
             {{ store.businessName }}
@@ -21,8 +23,10 @@
         </div>
       </div>
 
+      <!-- Date -->
       <div class="text-[13px] text-nouvo-ink font-medium ml-2">{{ today }}</div>
 
+      <!-- Dashboard button -->
       <button
         type="button"
         class="cursor-pointer bg-white border border-nouvo-gray-border rounded-full px-4 py-2 text-[12px] font-semibold text-nouvo-green flex items-center gap-1.5 hover:bg-nouvo-cream transition-colors shadow-sm"
@@ -60,7 +64,7 @@
         <span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-nouvo-red border border-white"></span>
       </button>
 
-      <div v-if="userName" class="h-11 flex items-center gap-2.5 bg-white rounded-full pl-1 pr-4 shadow-sm border border-nouvo-gray-border">
+      <div class="h-11 flex items-center gap-2.5 bg-white rounded-full pl-1 pr-4 shadow-sm border border-nouvo-gray-border">
         <div class="w-9 h-9 rounded-full bg-nouvo-green flex items-center justify-center font-bold text-[13px] text-white overflow-hidden shrink-0">
           {{ userInitial }}
         </div>
@@ -83,11 +87,10 @@ const auth = useAuthStore()
 const store = useSettingsStore()
 const totalOrders = ref(0)
 
-const userName = computed(() => auth.user?.username ?? '')
-const userInitial = computed(() => (userName.value[0] ?? '').toUpperCase())
+const userName = computed(() => auth.user?.username ?? 'User')
+const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
 const userRole = computed(() => {
-  const r = auth.user?.role
-  if (!r) return ''
+  const r = auth.user?.role ?? 'cashier'
   return r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Cashier'
 })
 
@@ -104,8 +107,9 @@ function fileUrl(p: string): string {
 
 onMounted(async () => {
   try {
+    // Show ALL orders count (not just today)
     const res = await invokeSafe<any>('orders:list', {
-      range: 'today', limit: 1, offset: 0, status: 'completed'
+      range: 'all', limit: 1, offset: 0, status: 'completed'
     })
     if (res.ok && res.data) totalOrders.value = res.data.total
   } catch {}
