@@ -1,14 +1,27 @@
 <template>
   <div class="bg-white rounded-2xl h-full flex flex-col p-5 overflow-hidden">
+    <!-- Header — green button toggles fullscreen -->
     <header class="flex items-center gap-3 pb-4">
       <button
         type="button"
         class="cursor-pointer w-9 h-9 rounded-full bg-nouvo-green text-white flex items-center justify-center shrink-0 hover:bg-nouvo-green-dark transition-colors"
-        :title="collapsed ? 'Show cart' : 'Hide cart'"
+        :title="collapsed ? 'Show cart' : 'Fullscreen (hide cart)'"
         @click="$emit('toggle-collapse')"
       >
-        <!-- RIGHT-pointing arrow (>) — cart is going away to the right -->
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg
+          v-if="!collapsed"
+          width="14" height="14" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round"
+        >
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        <svg
+          v-else
+          width="14" height="14" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round"
+        >
           <polyline points="9 18 15 12 9 6"/>
         </svg>
       </button>
@@ -72,7 +85,15 @@
       </div>
       <div class="flex justify-between items-center py-1 text-[12px]">
         <span class="text-nouvo-gray">Discount</span>
-        <input :value="cart.discount ?? ''" type="number" min="0" step="0.01" placeholder="0.0" class="w-[70px] px-2 py-0.5 bg-transparent text-[12px] text-right outline-none text-nouvo-ink font-semibold" @input="onDiscountInput" />
+        <input
+          :value="cart.discount ?? ''"
+          type="text"
+          inputmode="decimal"
+          placeholder="0"
+          class="w-[90px] px-2.5 py-1 border border-nouvo-gray-border rounded-lg text-[12px] text-right outline-none text-nouvo-ink font-semibold bg-white focus:border-nouvo-green focus:ring-2 focus:ring-nouvo-green/20 transition-all"
+          @input="onDiscountInput"
+          @focus="($event.target as HTMLInputElement).select()"
+        />
       </div>
       <div v-if="cart.taxAmount > 0" class="flex justify-between items-center py-1 text-[12px]">
         <span class="text-nouvo-gray">{{ store.business.tax_label }} ({{ store.taxRate }}%)</span>
@@ -126,7 +147,17 @@ const orderTypes = [
 
 function onDiscountInput(e: Event) {
   const v = (e.target as HTMLInputElement).value
-  cart.setDiscount(v === '' ? null : parseFloat(v))
+  if (v === '') {
+    cart.setDiscount(null)
+    return
+  }
+  const cleaned = v.replace(/[^0-9.]/g, '')
+  const num = parseFloat(cleaned)
+  if (isNaN(num)) {
+    cart.setDiscount(null)
+  } else {
+    cart.setDiscount(num)
+  }
 }
 
 function clearCart() {

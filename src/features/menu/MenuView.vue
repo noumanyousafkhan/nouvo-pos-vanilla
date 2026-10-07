@@ -50,9 +50,42 @@
             <span class="flex-1 text-sm font-medium truncate">{{ cat.name }}</span>
             <span class="text-xs opacity-70">{{ getCategoryCount(cat) }}</span>
             <div class="hidden group-hover:flex gap-1" @click.stop>
-              <button type="button" class="cursor-pointer w-6 h-6 rounded text-xs hover:bg-white/20" @click="openCategoryModal(cat)">✎</button>
-              <button type="button" class="cursor-pointer w-6 h-6 rounded text-xs hover:bg-white/20" @click="toggleCategory(cat)">⇄</button>
-              <button type="button" class="cursor-pointer w-6 h-6 rounded text-xs hover:bg-white/20" @click="deleteCategory(cat)">✕</button>
+              <button
+                type="button"
+                class="cursor-pointer w-7 h-7 rounded flex items-center justify-center hover:bg-white/20"
+                title="Edit"
+                @click="openCategoryModal(cat)"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer w-7 h-7 rounded flex items-center justify-center hover:bg-white/20"
+                :title="cat.is_active ? 'Deactivate' : 'Activate'"
+                @click="toggleCategory(cat)"
+              >
+                <svg v-if="cat.is_active" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+                <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer w-7 h-7 rounded flex items-center justify-center hover:bg-white/20"
+                title="Delete"
+                @click="deleteCategory(cat)"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
           </li>
         </ul>
@@ -68,7 +101,7 @@
             <p>No deals yet</p>
             <button class="cursor-pointer bg-nouvo-gold text-white px-4 py-2 rounded-lg text-[13px] font-semibold" @click="openDealModal()">+ Add First Deal</button>
           </div>
-          <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+          <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
             <div v-for="deal in deals" :key="deal.id"
               class="group bg-nouvo-cream rounded-xl p-3 border-2 border-transparent hover:border-nouvo-gold transition-colors flex flex-col"
               :class="{ 'opacity-50': !deal.is_active }">
@@ -78,14 +111,64 @@
               </div>
               <h3 class="text-sm font-semibold text-nouvo-ink mb-1 line-clamp-2">{{ deal.name }}</h3>
               <p class="text-sm font-bold text-nouvo-green mb-2">Rs. {{ Number(deal.price).toFixed(2) }}</p>
-              <div class="flex gap-1 flex-wrap mb-2">
+              <div class="flex gap-1 flex-wrap mb-3">
                 <span v-if="deal.is_active" class="text-[10px] bg-nouvo-green/10 text-nouvo-green px-1.5 py-0.5 rounded">Active</span>
                 <span v-else class="text-[10px] bg-nouvo-red/20 text-nouvo-red px-1.5 py-0.5 rounded">Inactive</span>
               </div>
-              <div class="flex gap-1 justify-end mt-auto">
-                <button type="button" class="cursor-pointer w-7 h-7 rounded bg-white hover:bg-nouvo-green/10 text-xs" title="Edit" @click="openDealModal(deal.id)">✎</button>
-                <button type="button" class="cursor-pointer w-7 h-7 rounded bg-white hover:bg-nouvo-green/10 text-xs" title="Toggle" @click="toggleDeal(deal)">⇄</button>
-                <button type="button" class="cursor-pointer w-7 h-7 rounded bg-white hover:bg-nouvo-red/20 text-nouvo-red text-xs" title="Delete" @click="deleteDeal(deal)">✕</button>
+              <div class="flex gap-1.5 justify-end mt-auto">
+                <!-- Duplicate -->
+                <button
+                  type="button"
+                  class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-gold hover:border-nouvo-gold text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
+                  title="Duplicate"
+                  @click="duplicateDeal(deal)"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+                <!-- Edit -->
+                <button
+                  type="button"
+                  class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-gold hover:border-nouvo-gold text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
+                  title="Edit"
+                  @click="openDealModal(deal.id)"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <!-- Toggle -->
+                <button
+                  type="button"
+                  class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-gold hover:border-nouvo-gold text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
+                  :title="deal.is_active ? 'Deactivate' : 'Activate'"
+                  @click="toggleDeal(deal)"
+                >
+                  <svg v-if="deal.is_active" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                  </svg>
+                  <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                </button>
+                <!-- Delete -->
+                <button
+                  type="button"
+                  class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-red hover:border-nouvo-red text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
+                  title="Delete"
+                  @click="deleteDeal(deal)"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                    <path d="M10 11v6"></path>
+                    <path d="M14 11v6"></path>
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
@@ -96,7 +179,7 @@
           <p>No products in this category</p>
           <button class="cursor-pointer bg-nouvo-green text-white px-4 py-2 rounded-lg text-[13px] font-semibold" @click="openProductModal()">Add Product</button>
         </div>
-        <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+        <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
           <div v-for="product in menu.products" :key="product.id"
             class="group bg-nouvo-cream rounded-xl p-3 border-2 border-transparent hover:border-nouvo-green transition-colors flex flex-col"
             :class="{ 'opacity-50': !product.is_active }">
@@ -106,16 +189,65 @@
             </div>
             <h3 class="text-sm font-semibold text-nouvo-ink mb-1 line-clamp-2">{{ product.name }}</h3>
             <p class="text-sm font-bold text-nouvo-green mb-2">Rs. {{ Number(product.price).toFixed(2) }}</p>
-            <div class="flex gap-1 flex-wrap mb-2">
+            <div class="flex gap-1 flex-wrap mb-3">
               <span v-if="product.has_variants" class="text-[10px] bg-nouvo-green/10 text-nouvo-green px-1.5 py-0.5 rounded">Variants</span>
               <span v-if="product.has_modifiers" class="text-[10px] bg-nouvo-gold/20 text-nouvo-gold px-1.5 py-0.5 rounded">Modifiers</span>
               <span v-if="!product.is_active" class="text-[10px] bg-nouvo-red/20 text-nouvo-red px-1.5 py-0.5 rounded">Inactive</span>
             </div>
-            <div class="flex gap-1 justify-end mt-auto">
-              <button type="button" class="cursor-pointer w-7 h-7 rounded bg-white hover:bg-nouvo-green/10 text-xs" @click="duplicateProduct(product)">⎘</button>
-              <button type="button" class="cursor-pointer w-7 h-7 rounded bg-white hover:bg-nouvo-green/10 text-xs" @click="openProductModal(product.id)">✎</button>
-              <button type="button" class="cursor-pointer w-7 h-7 rounded bg-white hover:bg-nouvo-green/10 text-xs" @click="toggleProduct(product)">⇄</button>
-              <button type="button" class="cursor-pointer w-7 h-7 rounded bg-white hover:bg-nouvo-red/20 text-nouvo-red text-xs" @click="deleteProduct(product)">✕</button>
+            <div class="flex gap-1.5 justify-end mt-auto">
+              <!-- Duplicate -->
+              <button
+                type="button"
+                class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-green hover:border-nouvo-green text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
+                title="Duplicate"
+                @click="duplicateProduct(product)"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+              <!-- Edit -->
+              <button
+                type="button"
+                class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-green hover:border-nouvo-green text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
+                title="Edit"
+                @click="openProductModal(product.id)"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+              </button>
+              <!-- Toggle -->
+              <button
+                type="button"
+                class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-green hover:border-nouvo-green text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
+                :title="product.is_active ? 'Deactivate' : 'Activate'"
+                @click="toggleProduct(product)"
+              >
+                <svg v-if="product.is_active" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </button>
+              <!-- Delete -->
+              <button
+                type="button"
+                class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-red hover:border-nouvo-red text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
+                title="Delete"
+                @click="deleteProduct(product)"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                  <path d="M10 11v6"></path>
+                  <path d="M14 11v6"></path>
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -134,6 +266,7 @@
     <DealEditorModal
       v-if="showDealModal"
       :deal-id="editingDealId"
+      :duplicate-from="duplicateDealSource"
       @close="closeDealModal"
       @saved="onDealSaved"
     />
@@ -167,6 +300,7 @@ const editingProductId = ref<number | null>(null)
 const duplicateFrom = ref<any>(null)
 const showDealModal = ref(false)
 const editingDealId = ref<number | null>(null)
+const duplicateDealSource = ref<any>(null)
 
 const userName = computed(() => auth.user?.username ?? 'User')
 const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
@@ -199,9 +333,8 @@ async function loadAll() {
 async function loadCounts() {
   const counts: Record<number, number> = {}
   for (const cat of menu.categories) {
-    // Skip "Deals" — its count comes from deals
-    if (cat.name.trim().toLowerCase() === 'deals') continue
-    const res = await invokeSafe<any>('menu:products:list', cat.id, false)
+    if (String(cat.name).trim().toLowerCase() === 'deals') continue
+    const res = await invokeSafe<any>('menu:products:list', Number(cat.id), false)
     if (res.ok) counts[cat.id] = (res.data || []).length
   }
   productCounts.value = counts
@@ -229,11 +362,8 @@ function selectCategory(id: number) {
   selectedCategoryId.value = id
   const cat = menu.categories.find((c: any) => c.id === id)
   selectedCategoryName.value = cat?.name || ''
-  if (isDealsCategory.value) {
-    loadDeals()
-  } else {
-    loadProducts()
-  }
+  if (isDealsCategory.value) loadDeals()
+  else loadProducts()
 }
 
 function openCategoryModal(cat?: any) {
@@ -259,7 +389,7 @@ async function toggleCategory(cat: any) {
 async function deleteCategory(cat: any) {
   if (!confirm(`Delete category "${cat.name}"?`)) return
   const res = await invokeSafe<any>('menu:categories:delete', cat.id)
-  if (!res.ok) { alert(res.error?.message || 'Delete failed'); return }
+  if (!res.ok) { alert((res as any).error?.message || 'Delete failed'); return }
   if (selectedCategoryId.value === cat.id) {
     selectedCategoryId.value = null
     menu.products = []
@@ -306,11 +436,18 @@ async function deleteProduct(product: any) {
 /* Deals */
 function openDealModal(dealId?: number) {
   editingDealId.value = dealId ?? null
+  duplicateDealSource.value = null
+  showDealModal.value = true
+}
+function duplicateDeal(deal: any) {
+  editingDealId.value = null
+  duplicateDealSource.value = deal
   showDealModal.value = true
 }
 function closeDealModal() {
   showDealModal.value = false
   editingDealId.value = null
+  duplicateDealSource.value = null
 }
 async function onDealSaved() {
   closeDealModal()

@@ -88,7 +88,21 @@
       </div>
     </div>
 
-    <CheckoutSuccessModal v-if="checkout.lastOrder" :order="checkout.lastOrder" @close="onSuccessClose" @new-order="onNewOrder" />
+    <CheckoutSuccessModal
+      v-if="checkout.lastOrder"
+      :order="checkout.lastOrder"
+      @close="onSuccessClose"
+      @new-order="onNewOrder"
+      @reprint="onReprint"
+    />
+
+    <ReceiptPreviewModal
+      v-if="previewText"
+      :text="previewText"
+      :type="previewType"
+      @close="previewText = null"
+      @print="onPrintNow"
+    />
   </div>
 </template>
 
@@ -98,8 +112,10 @@ import { useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
 import { useSettingsStore } from '@/stores/settings'
+import { invokeSafe } from '@/utils/ipc'
 import OrderSummaryPanel from './components/OrderSummaryPanel.vue'
 import CheckoutSuccessModal from './components/CheckoutSuccessModal.vue'
+import ReceiptPreviewModal from './components/ReceiptPreviewModal.vue'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -110,6 +126,10 @@ const paymentMethod = ref<'cash' | 'card'>('cash')
 const amountReceived = ref<number>(0)
 const error = ref('')
 const previewNumbers = ref<any>(null)
+
+const previewText = ref<string | null>(null)
+const previewType = ref<'customer' | 'kitchen'>('customer')
+const lastOrderId = ref<number | null>(null)
 
 const paymentMethods: Array<{ value: 'cash' | 'card'; label: string; icon: string }> = [
   { value: 'cash', label: 'Cash', icon: '💵' },
@@ -132,8 +152,8 @@ function generateIdempotencyKey(): string {
 }
 
 async function loadPreview() {
-  const res = await (window as any).nouvo.invoke('orders:previewNextNumbers')
-  if (res?.ok) previewNumbers.value = res.data
+  const res = await invokeSafe<any>('orders:previewNextNumbers')
+  if (res.ok) previewNumbers.value = res.data
 }
 
 function goBack() { router.push('/pos') }
@@ -160,12 +180,60 @@ async function placeOrder() {
     idempotencyKey: generateIdempotencyKey()
   }
   const cleanPayload = JSON.parse(JSON.stringify(orderData))
-  try { await checkout.createOrder(cleanPayload) }
-  catch (err: any) { error.value = err.message || 'Order failed' }
+  try {
+    const res = await checkout.createOrder(cleanPayload)
+    if (res?.order?.id) lastOrderId.value = res.order.id
+  } catch (err: any) {
+    error.value = err.message || 'Order failed'
+  }
 }
 
-function onSuccessClose() { cart.clearCart(); checkout.reset(); router.push('/pos') }
-function onNewOrder() { cart.clearCart(); checkout.reset(); router.push('/pos') }
+/**
+ * Reprint click → PREVIEW only (no actual print).
+ */
+async function onReprint(type: string) {
+  if (!lastOrderId.value) return
+  const res = await invokeSafe<any>('print:preview', {
+    orderId: lastOrderId.value,
+    type: type,
+    copies: 1,
+    isReprint: false
+  })
+  if (res.ok && (res.data as any)?.preview) {
+    previewText.value = (res.data as any).preview
+    previewType.value = type === 'kitchen' ? 'kitchen' : 'customer'
+  } else {
+    alert('Preview failed: ' + ((res as any).error?.message || 'Unknown'))
+  }
+}
+
+/**
+ * Print click in preview modal → actual print.
+ */
+async function onPrintNow() {
+  if (!lastOrderId.value) return
+  await invokeSafe<any>('print:receipt', {
+    orderId: lastOrderId.value,
+    type: previewType.value,
+    copies: 1,
+    isReprint: true
+  })
+  previewText.value = null
+}
+
+function onSuccessClose() {
+  cart.clearCart()
+  checkout.reset()
+  lastOrderId.value = null
+  router.push('/pos')
+}
+
+function onNewOrder() {
+  cart.clearCart()
+  checkout.reset()
+  lastOrderId.value = null
+  router.push('/pos')
+}
 
 onMounted(async () => {
   if (cart.isEmpty) { router.push('/pos'); return }

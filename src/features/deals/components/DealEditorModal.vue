@@ -2,12 +2,18 @@
   <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" @click.self="$emit('close')">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
       <header class="flex items-center justify-between px-6 py-4 border-b border-nouvo-gray-border">
-        <h2 class="text-lg font-bold text-nouvo-green">{{ dealId ? 'Edit' : 'New' }} Deal</h2>
+        <div>
+          <h2 class="text-lg font-bold text-nouvo-green">
+            {{ dealId ? 'Edit' : duplicateFrom ? 'Duplicate Deal' : 'New' }} Deal
+          </h2>
+          <p v-if="duplicateFrom" class="text-[11px] text-nouvo-gray mt-0.5">
+            Copying from: {{ duplicateFrom.name }}
+          </p>
+        </div>
         <button type="button" class="cursor-pointer w-8 h-8 rounded-lg hover:bg-nouvo-cream text-nouvo-gray" @click="$emit('close')">✕</button>
       </header>
 
       <div class="flex-1 overflow-y-auto p-6 space-y-6">
-        <!-- Deal Info -->
         <section>
           <h3 class="text-sm font-bold text-nouvo-green mb-3">Deal Info</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -36,7 +42,6 @@
           </div>
         </section>
 
-        <!-- Deal Components — CLEAN SINGLE ROW -->
         <section>
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-sm font-bold text-nouvo-green">Deal Components</h3>
@@ -49,7 +54,6 @@
 
           <div class="space-y-2">
             <div v-for="(item, i) in form.items" :key="i" class="flex items-center gap-2">
-              <!-- Product searchable dropdown (like variants) -->
               <div class="relative flex-1">
                 <input
                   v-model="item.productSearch"
@@ -62,7 +66,6 @@
                 />
                 <span v-if="item.product_id" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-nouvo-green text-xs font-bold pointer-events-none">✓</span>
 
-                <!-- Dropdown -->
                 <div
                   v-if="openDropdown === i && filteredProducts(item.productSearch).length > 0"
                   class="absolute z-30 left-0 right-0 mt-1 bg-white border border-nouvo-gray-border rounded-lg shadow-lg max-h-56 overflow-y-auto"
@@ -85,7 +88,6 @@
                 </div>
               </div>
 
-              <!-- Qty -->
               <input
                 v-model.number="item.quantity"
                 type="number"
@@ -93,7 +95,6 @@
                 class="w-16 px-3 py-2 border border-nouvo-gray-border rounded-lg text-sm outline-none focus:border-nouvo-green text-center"
               />
 
-              <!-- Remove -->
               <button
                 type="button"
                 class="cursor-pointer w-9 h-9 rounded-lg hover:bg-nouvo-red/10 text-nouvo-red text-sm"
@@ -102,7 +103,6 @@
             </div>
           </div>
 
-          <!-- Summary -->
           <div v-if="form.items.length > 0 && form.items.every((i: any) => i.product_id)" class="mt-4 p-3 bg-nouvo-cream rounded-lg text-sm space-y-1">
             <div class="flex justify-between">
               <span class="text-nouvo-gray">Normal Total:</span>
@@ -115,9 +115,6 @@
             <div v-if="Number(form.price) < normalTotal" class="flex justify-between">
               <span class="text-nouvo-green font-semibold">Customer saves:</span>
               <span class="font-bold text-nouvo-green">Rs. {{ (normalTotal - Number(form.price)).toFixed(2) }}</span>
-            </div>
-            <div v-else-if="Number(form.price) > normalTotal" class="text-nouvo-red font-semibold text-xs">
-              ⚠ Deal price is higher than normal total!
             </div>
           </div>
         </section>
@@ -139,7 +136,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { invokeSafe } from '@/utils/ipc'
 
-const props = defineProps<{ dealId?: number | null }>()
+const props = defineProps<{
+  dealId?: number | null
+  duplicateFrom?: any | null
+}>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 
 const allProducts = ref<any[]>([])
@@ -222,6 +222,33 @@ async function loadDeal() {
   }
 }
 
+async function loadDuplicate() {
+  if (!props.duplicateFrom) return
+  const src = props.duplicateFrom
+  const res = await invokeSafe<any>('deals:getFull', src.id)
+  if (res.ok && res.data) {
+    const d = res.data.deal
+    form.value = {
+      name: `${d.name} (Copy)`,
+      price: Number(d.price) || 0,
+      image_path: d.image_path || '',
+      is_active: true,
+      valid_from: d.valid_from || '',
+      valid_to: d.valid_to || '',
+      items: (res.data.items || []).map((i: any) => {
+        const p = allProducts.value.find((x: any) => x.id === i.product_id)
+        return {
+          product_id: i.product_id,
+          productName: p ? p.name : `Product #${i.product_id}`,
+          productSearch: p ? p.name : '',
+          unitPrice: p ? Number(p.price) : 0,
+          quantity: Number(i.quantity) || 1
+        }
+      })
+    }
+  }
+}
+
 async function save() {
   if (!form.value.name.trim()) { error.value = 'Name required'; return }
   if (form.value.items.length === 0) { error.value = 'Add at least one product'; return }
@@ -263,11 +290,15 @@ async function save() {
 
   saving.value = false
   if (res.ok) emit('saved')
-  else error.value = res.error?.message || 'Save failed'
+  else error.value = (res as any).error?.message || 'Save failed'
 }
 
 onMounted(async () => {
   await loadProducts()
-  await loadDeal()
+  if (props.dealId) {
+    await loadDeal()
+  } else if (props.duplicateFrom) {
+    await loadDuplicate()
+  }
 })
 </script>
