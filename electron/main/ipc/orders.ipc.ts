@@ -10,4 +10,7 @@ export function registerOrdersIpc(): void {
   handle('orders:previewNextNumbers', () => OrderService.previewNextNumbers())
   handle('orders:void', (data, userId) => OrderService.voidOrderExtended(data, userId))
   handle('orders:restore', (id, userId) => OrderService.restoreOrder(id, userId))
+  // ⭐ Order Timer
+  handle('orders:listActive', () => OrderService.listActiveOrders())
+  handle('orders:markCompleted', (orderId, userId) => OrderService.markCompleted(orderId, userId))
 }

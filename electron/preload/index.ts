@@ -28,9 +28,10 @@ const INVOKE_CHANNELS = [
   // Orders
   'orders:create', 'orders:get', 'orders:list', 'orders:listExtended',
   'orders:previewNextNumbers', 'orders:void', 'orders:restore',
+  'orders:listActive', 'orders:markCompleted',
   // Printing
   'print:preview', 'print:receipt', 'print:test', 'print:isAvailable',
-  // Reports ⭐ ADDED
+  // Reports
   'reports:kpis', 'reports:salesChart', 'reports:topProducts',
   'reports:categoryPerformance', 'reports:paymentBreakdown',
   'reports:itemsPerformance', 'reports:recentTransactions',
@@ -56,4 +57,3 @@ const api = {
 
 contextBridge.exposeInMainWorld('nouvo', api)
 export type NouvoApi = typeof api
-

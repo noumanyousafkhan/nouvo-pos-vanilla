@@ -6,18 +6,28 @@
         <span class="font-bold tracking-wide text-[14px]">NOUVO POS</span>
       </div>
       <nav class="flex items-center gap-1 flex-1 justify-center">
-        <button v-for="tab in navTabs" :key="tab.path" type="button"
+        <button
+          v-for="tab in navTabs"
+          :key="tab.path"
+          type="button"
           class="cursor-pointer px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors"
           :class="$route.path === tab.path ? 'bg-nouvo-cream text-nouvo-green' : 'text-white/80 hover:bg-white/10 hover:text-white'"
-          @click="navigate(tab)">{{ tab.label }}</button>
+          @click="navigate(tab)"
+        >{{ tab.label }}</button>
       </nav>
       <div class="flex items-center gap-3 shrink-0">
         <div class="text-right leading-tight">
           <div class="text-[12px] font-bold">{{ userName }}</div>
           <div class="text-[10px] text-white/60">{{ userRole }}</div>
         </div>
-        <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold text-[13px]">{{ userInitial }}</div>
-        <button type="button" class="cursor-pointer bg-white/10 hover:bg-white/20 text-white px-3.5 py-2 rounded-lg text-[12px] font-medium transition-colors" @click="logout">Logout</button>
+        <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold text-[13px]">
+          {{ userInitial }}
+        </div>
+        <button
+          type="button"
+          class="cursor-pointer bg-white/10 hover:bg-white/20 text-white px-3.5 py-2 rounded-lg text-[12px] font-medium transition-colors"
+          @click="logout"
+        >Logout</button>
       </div>
     </header>
 
@@ -95,7 +105,6 @@
       <main class="bg-white rounded-2xl border-2 border-nouvo-green/30 p-4 overflow-y-auto">
         <div v-if="!selectedCategoryId" class="h-full flex items-center justify-center text-nouvo-gray text-sm">Select a category</div>
 
-        <!-- Deals Category view -->
         <div v-else-if="isDealsCategory" class="h-full">
           <div v-if="deals.length === 0" class="h-full flex flex-col items-center justify-center gap-3 text-nouvo-gray text-sm">
             <p>No deals yet</p>
@@ -116,7 +125,6 @@
                 <span v-else class="text-[10px] bg-nouvo-red/20 text-nouvo-red px-1.5 py-0.5 rounded">Inactive</span>
               </div>
               <div class="flex gap-1.5 justify-end mt-auto">
-                <!-- Duplicate -->
                 <button
                   type="button"
                   class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-gold hover:border-nouvo-gold text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
@@ -128,7 +136,6 @@
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
                 </button>
-                <!-- Edit -->
                 <button
                   type="button"
                   class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-gold hover:border-nouvo-gold text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
@@ -140,7 +147,6 @@
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                   </svg>
                 </button>
-                <!-- Toggle -->
                 <button
                   type="button"
                   class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-gold hover:border-nouvo-gold text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
@@ -155,7 +161,6 @@
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
                 </button>
-                <!-- Delete -->
                 <button
                   type="button"
                   class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-red hover:border-nouvo-red text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
@@ -174,7 +179,6 @@
           </div>
         </div>
 
-        <!-- Normal category view -->
         <div v-else-if="menu.products.length === 0" class="h-full flex flex-col items-center justify-center gap-3 text-nouvo-gray text-sm">
           <p>No products in this category</p>
           <button class="cursor-pointer bg-nouvo-green text-white px-4 py-2 rounded-lg text-[13px] font-semibold" @click="openProductModal()">Add Product</button>
@@ -195,7 +199,6 @@
               <span v-if="!product.is_active" class="text-[10px] bg-nouvo-red/20 text-nouvo-red px-1.5 py-0.5 rounded">Inactive</span>
             </div>
             <div class="flex gap-1.5 justify-end mt-auto">
-              <!-- Duplicate -->
               <button
                 type="button"
                 class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-green hover:border-nouvo-green text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
@@ -207,7 +210,6 @@
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                 </svg>
               </button>
-              <!-- Edit -->
               <button
                 type="button"
                 class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-green hover:border-nouvo-green text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
@@ -219,7 +221,6 @@
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                 </svg>
               </button>
-              <!-- Toggle -->
               <button
                 type="button"
                 class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-green hover:border-nouvo-green text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
@@ -234,7 +235,6 @@
                   <polygon points="5 3 19 12 5 21 5 3"></polygon>
                 </svg>
               </button>
-              <!-- Delete -->
               <button
                 type="button"
                 class="cursor-pointer w-9 h-9 rounded-lg bg-white border border-nouvo-gray-border hover:bg-nouvo-red hover:border-nouvo-red text-nouvo-gray hover:text-white flex items-center justify-center transition-colors"
@@ -317,6 +317,7 @@ const navTabs = [
   { path: '/home', label: 'Dashboard' },
   { path: '/orders', label: 'Orders' },
   { path: '/menu', label: 'Menu' },
+  { path: '/order-timer', label: 'Order Timer' },
   { path: '/reports', label: 'Reports' },
   { path: '/settings', label: 'Settings' }
 ]

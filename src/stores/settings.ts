@@ -60,6 +60,7 @@ export interface OrderSettings {
   order_prefix: string
   discount_enabled: boolean
   discount_max_percent: number
+  prep_time_minutes: number
 }
 
 export interface SystemSettings {
@@ -77,14 +78,14 @@ export interface SystemSettings {
 }
 
 const DEFAULT_BUSINESS: BusinessSettings = {
-  name: 'NOUVO POS Vanilla',
+  name: 'NOUVO POS VANILLA',
   logo_path: '',
-  address: 'Mansehra KPK Pakistan',
-  phone_1: '03114521220',
+  address: '',
+  phone_1: '',
   phone_2: '',
-  email: 'havenirnomi@gmail.com',
+  email: '',
   website: '',
-  slogan: 'NOUVO POS By: Nouman Khan',
+  slogan: '',
   currency_symbol: 'Rs.',
   currency_code: 'PKR',
   tax_rate: 0,
@@ -133,7 +134,8 @@ const DEFAULT_ORDER: OrderSettings = {
   invoice_prefix: 'INV',
   order_prefix: 'ORD',
   discount_enabled: true,
-  discount_max_percent: 100
+  discount_max_percent: 100,
+  prep_time_minutes: 40
 }
 
 const DEFAULT_SYSTEM: SystemSettings = {

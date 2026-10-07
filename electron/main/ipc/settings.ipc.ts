@@ -10,24 +10,24 @@ export function registerSettingsIpc(): void {
   handle('settings:getOrder', () => SettingsService.getOrder())
   handle('settings:getSystem', () => SettingsService.getSystem())
 
-  handle('settings:updateBusiness', (data, userId) => {
-    SettingsService.updateBusiness(data, userId)
+  handle('settings:updateBusiness', (data) => {
+    SettingsService.updateBusiness(data)
     return { ok: true }
   })
-  handle('settings:updateReceipt', (data, userId) => {
-    SettingsService.updateReceipt(data, userId)
+  handle('settings:updateReceipt', (data) => {
+    SettingsService.updateReceipt(data)
     return { ok: true }
   })
-  handle('settings:updatePrinter', (data, userId) => {
-    SettingsService.updatePrinter(data, userId)
+  handle('settings:updatePrinter', (data) => {
+    SettingsService.updatePrinter(data)
     return { ok: true }
   })
-  handle('settings:updateOrder', (data, userId) => {
-    SettingsService.updateOrder(data, userId)
+  handle('settings:updateOrder', (data) => {
+    SettingsService.updateOrder(data)
     return { ok: true }
   })
-  handle('settings:updateSystem', (data, userId) => {
-    SettingsService.updateSystem(data, userId)
+  handle('settings:updateSystem', (data) => {
+    SettingsService.updateSystem(data)
     return { ok: true }
   })
 
@@ -36,6 +36,7 @@ export function registerSettingsIpc(): void {
     return { ok: true }
   })
 
+  // Logo
   handle('settings:uploadLogo', () => LogoService.pickAndSave())
-  handle('settings:getLogoPath', () => LogoService.getLogoFilePath())
+  handle('settings:getLogoPath', () => SettingsService.get('business.logo_path') ?? '')
 }

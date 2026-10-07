@@ -14,7 +14,14 @@
         <KpiCards :kpis="data.kpis" :currency="currency" />
 
         <div class="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
-          <SalesChart :data="data.salesChart" :currency="currency" @refresh="loadAll" />
+          <SalesChart
+            :data="data.salesChart"
+            :currency="currency"
+            :current-range="filters.range"
+            @refresh="loadAll"
+            @update:range="onRangeChange"
+            @open-custom="showCustomModal = true"
+          />
           <ScoreCard :score="data.score" />
         </div>
 
@@ -33,6 +40,14 @@
         <RecentTransactions :transactions="data.recentTransactions" :currency="currency" />
       </div>
     </div>
+
+    <DateRangeModal
+      v-if="showCustomModal"
+      :from="filters.dateFrom"
+      :to="filters.dateTo"
+      @close="showCustomModal = false"
+      @apply="onCustomRangeApply"
+    />
   </div>
 </template>
 
@@ -49,21 +64,19 @@ import PaymentBreakdown from './components/PaymentBreakdown.vue'
 import OrderTypeAnalysis from './components/OrderTypeAnalysis.vue'
 import CategoryPerformance from './components/CategoryPerformance.vue'
 import RecentTransactions from './components/RecentTransactions.vue'
+import DateRangeModal from './components/DateRangeModal.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { invokeSafe } from '@/utils/ipc'
 
 const store = useSettingsStore()
 const loading = ref(false)
 const currency = ref('Rs.')
+const showCustomModal = ref(false)
 
-/**
- * Default range = 'all' → so ALL orders show up.
- * Change to 'today' if you want today by default.
- */
 const filters = ref({
   range: 'all',
-  dateFrom: undefined,
-  dateTo: undefined,
+  dateFrom: undefined as string | undefined,
+  dateTo: undefined as string | undefined,
   orderType: undefined,
   paymentMethod: undefined,
   includeVoided: false
@@ -97,10 +110,24 @@ async function loadAll() {
   loading.value = false
   if (res.ok && res.data) {
     data.value = res.data
-    console.log('[reports] loaded with filters:', filters.value)
   } else if (!res.ok) {
     console.error('Reports load failed:', (res as any).error?.message)
   }
+}
+
+function onRangeChange(newRange: string) {
+  filters.value.range = newRange
+  filters.value.dateFrom = undefined
+  filters.value.dateTo = undefined
+  loadAll()
+}
+
+function onCustomRangeApply(payload: { from: string; to: string }) {
+  filters.value.range = 'custom'
+  filters.value.dateFrom = payload.from
+  filters.value.dateTo = payload.to
+  showCustomModal.value = false
+  loadAll()
 }
 
 onMounted(() => {

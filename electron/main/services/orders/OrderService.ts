@@ -25,6 +25,7 @@ export interface OrderRecord {
   change: number
   status: string
   created_at: string
+  completed_at: string | null
 }
 
 export class OrderService {
@@ -84,7 +85,6 @@ export class OrderService {
       const itemIds: number[] = []
 
       for (const item of parsed.items) {
-        // Serialize dealChildren into notes
         const anyItem = item as any
         const notesPayload = anyItem.dealChildren && anyItem.dealChildren.length > 0
           ? JSON.stringify({ _type: 'deal_children', children: anyItem.dealChildren })
@@ -110,7 +110,6 @@ export class OrderService {
         itemIds.push(Number(itemResult.lastInsertRowid))
       }
 
-      // Insert modifiers (only for normal products; deal children live in notes)
       for (let i = 0; i < parsed.items.length; i++) {
         const item = parsed.items[i]
         const orderItemId = itemIds[i]
@@ -146,8 +145,8 @@ export class OrderService {
     const orderSettings = SettingsService.getOrder()
 
     if (parsed.orderType === 'delivery' && orderSettings.require_customer_for_delivery) {
-      if (!parsed.customerName || !parsed.customerPhone || !parsed.customerAddress) {
-        throw new AppError('VALIDATION', 'Delivery requires customer name, phone, and address')
+      if (!parsed.customerPhone || !parsed.customerAddress) {
+        throw new AppError('VALIDATION', 'Delivery requires phone and address')
       }
     }
 
@@ -170,7 +169,7 @@ export class OrderService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // GET FULL ORDER (with deal_children parsing)
+  // GET FULL ORDER
   // ═══════════════════════════════════════════════════════
   static getFullOrder(orderId: number) {
     const db = getDatabase()
@@ -190,9 +189,7 @@ export class OrderService {
             cleanNotes = ''
           }
         }
-      } catch {
-        // Not JSON — keep notes as-is
-      }
+      } catch {}
 
       return {
         ...item,
@@ -208,7 +205,7 @@ export class OrderService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // LIST ORDERS (basic — Phase 7)
+  // LIST ORDERS (basic)
   // ═══════════════════════════════════════════════════════
   static listOrders(filters: unknown) {
     const parsed = OrderFiltersSchema.parse(filters)
@@ -242,7 +239,7 @@ export class OrderService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // LIST ORDERS EXTENDED (Phase 9 — history with filters + stats)
+  // LIST ORDERS EXTENDED (with filters + stats)
   // ═══════════════════════════════════════════════════════
   static listOrdersExtended(filters: unknown) {
     const db = getDatabase()
@@ -251,14 +248,12 @@ export class OrderService {
     const conditions: string[] = []
     const params: any[] = []
 
-    // Status filter
     if (f.status === 'voided') {
       conditions.push("status = 'voided'")
     } else if (!f.includeVoided) {
       conditions.push("status != 'voided'")
     }
 
-    // Date range
     const range = this.resolveRange(f)
     if (range.from) {
       conditions.push('created_at >= ?')
@@ -285,7 +280,6 @@ export class OrderService {
 
     const whereSql = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : ''
 
-    // ⭐ STATS — computed BEFORE pagination, over ALL matching orders
     const statsSql = `
       SELECT
         COUNT(*) as count,
@@ -299,13 +293,11 @@ export class OrderService {
       avg_order: number
     }
 
-    // Paginated rows — sorted by invoice_number DESC (latest first)
     const limit = Number(f.limit) || 50
     const offset = Number(f.offset) || 0
     const rowsSql = `SELECT * FROM orders${whereSql} ORDER BY invoice_number DESC LIMIT ? OFFSET ?`
     const rows = db.prepare(rowsSql).all(...params, limit, offset) as any[]
 
-    // Count (total matching rows)
     const countSql = `SELECT COUNT(*) as c FROM orders${whereSql}`
     const countRow = db.prepare(countSql).get(...params) as { c: number }
 
@@ -418,7 +410,6 @@ export class OrderService {
     const orderRow = db.prepare('SELECT last_number FROM order_counter WHERE prefix = ? AND date_key = ?')
       .get(orderPrefix, dateKey) as { last_number: number } | undefined
 
-    // Invoice counter uses composite key "INV-YYYYMMDD"
     const invoiceCompositeKey = `${invoicePrefix}-${dateKey}`
     const invoiceRow = db.prepare('SELECT last_number FROM invoice_counter WHERE prefix = ?')
       .get(invoiceCompositeKey) as { last_number: number } | undefined
@@ -427,5 +418,102 @@ export class OrderService {
       orderNumber: `${orderPrefix}-${dateKey}-${String((orderRow?.last_number ?? 0) + 1).padStart(4, '0')}`,
       invoiceNumber: `${invoicePrefix}-${dateKey}${String((invoiceRow?.last_number ?? 0) + 1).padStart(4, '0')}`
     }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // ORDER TIMER — LIST ACTIVE ORDERS
+  // ═══════════════════════════════════════════════════════
+  static listActiveOrders() {
+    const db = getDatabase()
+
+    const rows = db.prepare(`
+      SELECT
+        o.id,
+        o.order_number,
+        o.invoice_number,
+        o.order_type,
+        o.customer_name,
+        o.customer_phone,
+        o.customer_address,
+        o.table_number,
+        o.status,
+        o.total,
+        o.created_at,
+        o.completed_at
+      FROM orders o
+      WHERE o.status != 'voided'
+        AND o.completed_at IS NULL
+      ORDER BY o.created_at ASC
+    `).all() as any[]
+
+    for (const row of rows) {
+      const items = db.prepare(`
+        SELECT
+          id, product_id, variant_id, deal_id,
+          product_name, variant_name, quantity, unit_price,
+          line_total, notes
+        FROM order_items
+        WHERE order_id = ?
+        ORDER BY id
+      `).all(row.id) as any[]
+
+      row.items = items.map((item) => {
+        let dealChildren: any[] = []
+        let cleanNotes = item.notes || ''
+        try {
+          if (item.notes && typeof item.notes === 'string' && item.notes.trim().startsWith('{')) {
+            const parsedNotes = JSON.parse(item.notes)
+            if (parsedNotes && parsedNotes._type === 'deal_children' && Array.isArray(parsedNotes.children)) {
+              dealChildren = parsedNotes.children
+              cleanNotes = ''
+            }
+          }
+        } catch {}
+
+        return {
+          id: item.id,
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          deal_id: item.deal_id,
+          product_name: item.product_name,
+          variant_name: item.variant_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          line_total: item.line_total,
+          notes: cleanNotes,
+          deal_children: dealChildren
+        }
+      })
+    }
+
+    return rows
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // ORDER TIMER — MARK COMPLETED
+  // ═══════════════════════════════════════════════════════
+  static markCompleted(orderId: number, userId?: number) {
+    const db = getDatabase()
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any
+    if (!order) throw new NotFoundError('Order not found')
+    if (order.status === 'voided') throw new AppError('ORDER_VOIDED', 'Cannot complete a voided order')
+
+    const now = new Date().toISOString()
+
+    db.prepare(`
+      UPDATE orders
+      SET completed_at = ?
+      WHERE id = ?
+    `).run(now, orderId)
+
+    AuditService.log('order.completed', {
+      orderId,
+      orderNumber: order.order_number,
+      completedAt: now,
+      createdAt: order.created_at
+    }, userId)
+
+    return this.getFullOrder(orderId)
   }
 }

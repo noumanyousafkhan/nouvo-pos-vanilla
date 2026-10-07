@@ -8,6 +8,11 @@
       <NInput v-model="form.invoice_prefix" label="Invoice Prefix" />
       <NInput v-model="form.order_prefix" label="Order Prefix" />
       <NInput v-model.number="form.discount_max_percent" label="Max Discount %" type="number" />
+      <NInput
+        v-model.number="form.prep_time_minutes"
+        label="Preparation Time (minutes)"
+        type="number"
+      />
     </div>
 
     <div class="mt-5 flex flex-wrap gap-4">
@@ -17,6 +22,10 @@
       <NCheckbox v-model="form.auto_print_on_checkout" label="Auto Print on Checkout" />
       <NCheckbox v-model="form.discount_enabled" label="Discount Enabled" />
     </div>
+
+    <p class="mt-3 text-[11px] text-nouvo-gray">
+      Preparation time is used by the Order Timer view to compute countdown and delay.
+    </p>
 
     <div class="mt-6 flex justify-end">
       <NButton :loading="saving" @click="save">{{ saving ? 'Saving...' : 'Save' }}</NButton>
@@ -49,10 +58,25 @@ const orderTypeOptions = [
 async function save() {
   saving.value = true
   message.value = ''
+
+  const prepMin = Number(form.value.prep_time_minutes)
+  if (!prepMin || prepMin < 1 || prepMin > 240) {
+    message.value = 'Preparation time must be between 1 and 240 minutes'
+    messageType.value = 'error'
+    saving.value = false
+    return
+  }
+  form.value.prep_time_minutes = prepMin
+
   const res = await store.updateOrder({ ...form.value })
   saving.value = false
-  if (res.ok) { message.value = 'Saved'; messageType.value = 'success' }
-  else { message.value = res.error?.message || 'Save failed'; messageType.value = 'error' }
+  if (res.ok) {
+    message.value = 'Saved'
+    messageType.value = 'success'
+  } else {
+    message.value = res.error?.message || 'Save failed'
+    messageType.value = 'error'
+  }
 }
 
 onMounted(() => {

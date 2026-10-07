@@ -38,6 +38,20 @@
         </svg>
         Dashboard
       </button>
+
+      <!-- Order Timer button -->
+      <button
+        type="button"
+        class="cursor-pointer bg-white border border-nouvo-gray-border rounded-full px-4 py-2 text-[12px] font-semibold text-nouvo-green flex items-center gap-1.5 hover:bg-nouvo-cream transition-colors shadow-sm"
+        @click="$router.push('/order-timer')"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="13" r="8"></circle>
+          <polyline points="12 9 12 13 15 15"></polyline>
+          <line x1="9" y1="2" x2="15" y2="2"></line>
+        </svg>
+        Order Timer
+      </button>
     </div>
 
     <div class="flex items-center gap-4">
@@ -53,16 +67,28 @@
         Report
       </button>
 
-      <button
-        type="button"
-        class="cursor-pointer relative w-11 h-11 bg-white border border-nouvo-gray-border rounded-full flex items-center justify-center hover:bg-nouvo-cream transition-colors shadow-sm"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-          <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-        </svg>
-        <span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-nouvo-red border border-white"></span>
-      </button>
+      <!-- Notifications bell + dropdown -->
+      <div class="relative">
+        <button
+          type="button"
+          class="cursor-pointer relative w-11 h-11 bg-white border border-nouvo-gray-border rounded-full flex items-center justify-center hover:bg-nouvo-cream transition-colors shadow-sm"
+          @click.stop="toggleNotifications"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+          <span
+            v-if="unreadCount > 0"
+            class="absolute top-2 right-2 w-2 h-2 rounded-full bg-nouvo-red border border-white"
+          ></span>
+        </button>
+
+        <NotificationsDropdown
+          v-if="showNotifications"
+          @close="showNotifications = false"
+        />
+      </div>
 
       <div class="h-11 flex items-center gap-2.5 bg-white rounded-full pl-1 pr-4 shadow-sm border border-nouvo-gray-border">
         <div class="w-9 h-9 rounded-full bg-nouvo-green flex items-center justify-center font-bold text-[13px] text-white overflow-hidden shrink-0">
@@ -78,14 +104,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { invokeSafe } from '@/utils/ipc'
+import NotificationsDropdown from './NotificationsDropdown.vue'
 
 const auth = useAuthStore()
 const store = useSettingsStore()
 const totalOrders = ref(0)
+
+const showNotifications = ref(false)
+const unreadCount = ref(1) // keep dot visible — actual unread count could be computed
 
 const userName = computed(() => auth.user?.username ?? 'User')
 const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
@@ -98,6 +128,18 @@ const today = computed(() =>
   new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })
 )
 
+function toggleNotifications() {
+  showNotifications.value = !showNotifications.value
+  if (showNotifications.value) unreadCount.value = 0
+}
+
+function onClickOutside(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.relative')) {
+    showNotifications.value = false
+  }
+}
+
 function fileUrl(p: string): string {
   if (!p) return ''
   const normalized = p.replace(/\\/g, '/')
@@ -107,11 +149,16 @@ function fileUrl(p: string): string {
 
 onMounted(async () => {
   try {
-    // Show ALL orders count (not just today)
     const res = await invokeSafe<any>('orders:list', {
       range: 'all', limit: 1, offset: 0, status: 'completed'
     })
     if (res.ok && res.data) totalOrders.value = res.data.total
   } catch {}
+
+  document.addEventListener('click', onClickOutside)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onClickOutside)
 })
 </script>

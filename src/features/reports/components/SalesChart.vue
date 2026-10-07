@@ -5,9 +5,45 @@
         <span class="text-[16px]">📊</span>
         <span class="text-[13px] font-bold text-nouvo-ink uppercase tracking-wider">Sales Statistic</span>
       </div>
-      <button class="cursor-pointer text-[14px] text-nouvo-gray" @click="$emit('refresh')">⋯</button>
+
+      <!-- 3-Dots Menu -->
+      <div class="relative">
+        <button
+          type="button"
+          class="cursor-pointer text-[14px] text-nouvo-gray w-8 h-8 rounded-lg hover:bg-nouvo-cream flex items-center justify-center transition-colors"
+          @click.stop="menuOpen = !menuOpen"
+        >⋯</button>
+
+        <div
+          v-if="menuOpen"
+          class="absolute right-0 top-[36px] w-[200px] bg-white border border-nouvo-gray-border rounded-xl shadow-lg z-30 py-1"
+        >
+          <button
+            type="button"
+            class="cursor-pointer w-full text-left px-3 py-2 text-[13px] hover:bg-nouvo-cream flex items-center gap-2"
+            @click="refreshChart"
+          >
+            <span>↻</span> <span>Refresh</span>
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer w-full text-left px-3 py-2 text-[13px] hover:bg-nouvo-cream flex items-center gap-2"
+            @click="exportPNG"
+          >
+            <span>🖼</span> <span>Export PNG</span>
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer w-full text-left px-3 py-2 text-[13px] hover:bg-nouvo-cream flex items-center gap-2"
+            @click="exportCSV"
+          >
+            <span>📄</span> <span>Export CSV</span>
+          </button>
+        </div>
+      </div>
     </div>
 
+    <!-- Legend + Time Filters -->
     <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
       <div class="flex items-center gap-4 text-[11px]">
         <span v-for="(cat, i) in categories" :key="cat.id" class="flex items-center gap-1.5">
@@ -21,7 +57,7 @@
           type="button"
           class="cursor-pointer w-7 h-7 rounded-full bg-nouvo-cream flex items-center justify-center text-[12px] hover:bg-nouvo-green hover:text-white transition-colors mr-2"
           title="Refresh"
-          @click="$emit('refresh')"
+          @click="refreshChart"
         >↻</button>
         <button
           v-for="p in timeFilters"
@@ -33,12 +69,19 @@
       </div>
     </div>
 
+    <!-- Chart -->
     <div v-if="buckets.length === 0" class="h-[240px] flex items-center justify-center text-nouvo-gray text-[13px]">
       No data
     </div>
 
     <div v-else class="relative">
-      <svg viewBox="0 0 800 260" class="w-full h-[260px]" @mousemove="onMouseMove" @mouseleave="hoveredIndex = null">
+      <svg
+        ref="chartSvg"
+        viewBox="0 0 800 260"
+        class="w-full h-[260px]"
+        @mousemove="onMouseMove"
+        @mouseleave="hoveredIndex = null"
+      >
         <g stroke="#F0F0F0" stroke-width="1" stroke-dasharray="2 4">
           <line v-for="i in 5" :key="i" x1="40" :y1="i * 45 + 10" x2="790" :y2="i * 45 + 10" />
         </g>
@@ -107,10 +150,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps<{ data: any; currency: string; currentRange?: string }>()
-const emit = defineEmits<{ refresh: []; 'update:range': [string, string?, string?] }>()
+const emit = defineEmits<{
+  refresh: []
+  'update:range': [string]
+  'open-custom': []
+}>()
 
 const buckets = computed(() => props.data?.buckets ?? [])
 const categories = computed(() => props.data?.categories ?? [])
@@ -118,8 +165,10 @@ const series = computed(() => props.data?.series ?? {})
 
 const PALETTE = ['#025726', '#D4A84B', '#E85A5A']
 
-const activeTimeFilter = ref(props.currentRange || 'today')
+const activeTimeFilter = ref(props.currentRange || 'all')
 const hoveredIndex = ref<number | null>(null)
+const menuOpen = ref(false)
+const chartSvg = ref<SVGSVGElement | null>(null)
 
 const timeFilters = [
   { value: 'today', label: 'Day' },
@@ -170,7 +219,76 @@ function pathFor(catName: string) {
 
 function setFilter(v: string) {
   activeTimeFilter.value = v
-  if (v !== 'custom') emit('update:range', v)
+  if (v === 'custom') {
+    emit('open-custom')
+    return
+  }
+  emit('update:range', v)
+}
+
+function refreshChart() {
+  menuOpen.value = false
+  emit('refresh')
+}
+
+function exportPNG() {
+  menuOpen.value = false
+  if (!chartSvg.value) return
+
+  const svgData = new XMLSerializer().serializeToString(chartSvg.value)
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  const img = new Image()
+
+  canvas.width = 1600
+  canvas.height = 520
+
+  img.onload = () => {
+    if (!ctx) return
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+    const link = document.createElement('a')
+    link.download = `sales-chart-${Date.now()}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  }
+
+  img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
+}
+
+function exportCSV() {
+  menuOpen.value = false
+  const rows: string[] = []
+
+  // Header
+  const catNames = categories.value.map((c: any) => c.name)
+  rows.push(['Bucket', ...catNames].join(','))
+
+  // Data rows
+  for (let i = 0; i < buckets.value.length; i++) {
+    const b = buckets.value[i]
+    const vals = categories.value.map((c: any) => {
+      const arr = series.value[c.name] || []
+      return arr[i] ?? 0
+    })
+    rows.push([b.label, ...vals].join(','))
+  }
+
+  const csv = rows.join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const link = document.createElement('a')
+  link.download = `sales-chart-${Date.now()}.csv`
+  link.href = URL.createObjectURL(blob)
+  link.click()
+}
+
+function onClickOutside(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.relative')) {
+    menuOpen.value = false
+  }
 }
 
 function onMouseMove(e: MouseEvent) {
@@ -221,4 +339,7 @@ function formatXFull(label: any) {
   if (props.data?.format === 'hour') return `${str}:00`
   return str
 }
+
+onMounted(() => document.addEventListener('click', onClickOutside))
+onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
 </script>

@@ -13,7 +13,8 @@ const router = createRouter({
     { path: '/pos', name: 'pos', component: () => import('@/features/pos/PosView.vue') },
     { path: '/checkout', name: 'checkout', component: () => import('@/features/checkout/CheckoutView.vue') },
     { path: '/orders', name: 'orders', component: () => import('@/features/orders/OrdersView.vue') },
-    { path: '/reports', name: 'reports', component: () => import('@/features/reports/ReportsView.vue') }
+    { path: '/reports', name: 'reports', component: () => import('@/features/reports/ReportsView.vue') },
+    { path: '/order-timer', name: 'order-timer', component: () => import('@/features/order-timer/OrderTimerView.vue') }
   ]
 })
 

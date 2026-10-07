@@ -5,7 +5,6 @@
         <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold">N</div>
         <span class="font-bold tracking-wide text-[14px]">NOUVO POS</span>
       </div>
-
       <nav class="flex items-center gap-1 flex-1 justify-center">
         <button
           v-for="tab in navTabs"
@@ -16,7 +15,6 @@
           @click="navigate(tab)"
         >{{ tab.label }}</button>
       </nav>
-
       <div class="flex items-center gap-3 shrink-0">
         <div class="text-right leading-tight">
           <div class="text-[12px] font-bold">{{ userName }}</div>
@@ -167,6 +165,7 @@ const navTabs = [
   { path: '/home', label: 'Dashboard' },
   { path: '/orders', label: 'Orders' },
   { path: '/menu', label: 'Menu' },
+  { path: '/order-timer', label: 'Order Timer' },
   { path: '/reports', label: 'Reports' },
   { path: '/settings', label: 'Settings' }
 ]

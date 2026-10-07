@@ -1,14 +1,10 @@
 <template>
   <div class="h-screen flex flex-col bg-nouvo-cream overflow-hidden">
-    <!-- Top Bar -->
     <header class="h-16 bg-nouvo-green text-white flex items-center justify-between px-6 shrink-0">
       <div class="flex items-center gap-3 shrink-0">
-        <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold">
-          N
-        </div>
+        <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold">N</div>
         <span class="font-bold tracking-wide text-[14px]">NOUVO POS</span>
       </div>
-
       <nav class="flex items-center gap-1 flex-1 justify-center">
         <button
           v-for="tab in navTabs"
@@ -19,7 +15,6 @@
           @click="navigate(tab)"
         >{{ tab.label }}</button>
       </nav>
-
       <div class="flex items-center gap-3 shrink-0">
         <div class="text-right leading-tight">
           <div class="text-[12px] font-bold">{{ userName }}</div>
@@ -36,27 +31,21 @@
       </div>
     </header>
 
-    <!-- Content -->
-    <div class="flex-1 flex flex-col p-6 overflow-hidden">
-      <header class="flex items-center justify-between mb-4 shrink-0">
-        <h1 class="text-xl font-bold text-nouvo-green">Settings</h1>
-      </header>
+    <div class="flex-1 grid grid-cols-[260px_1fr] gap-6 px-6 py-6 overflow-hidden">
+      <aside class="bg-white rounded-2xl border-2 border-nouvo-green/20 p-4 overflow-y-auto">
+        <h2 class="text-xs font-bold text-nouvo-gray uppercase tracking-wider mb-3">Settings</h2>
+        <ul class="space-y-1">
+          <li v-for="tab in tabs" :key="tab.id"
+            class="cursor-pointer flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium"
+            :class="activeTab === tab.id ? 'bg-nouvo-green text-white' : 'hover:bg-nouvo-cream text-nouvo-ink'"
+            @click="activeTab = tab.id">
+            <span class="text-base">{{ tab.icon }}</span>
+            <span>{{ tab.label }}</span>
+          </li>
+        </ul>
+      </aside>
 
-      <nav class="flex gap-2 mb-4 shrink-0">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          :class="[
-            'cursor-pointer px-5 py-2.5 rounded-lg text-sm font-medium transition-colors border-2',
-            activeTab === tab.id
-              ? 'bg-nouvo-green text-white border-nouvo-green'
-              : 'bg-white text-nouvo-ink border-nouvo-green/30 hover:border-nouvo-green'
-          ]"
-          @click="activeTab = tab.id"
-        >{{ tab.label }}</button>
-      </nav>
-
-      <main class="flex-1 overflow-y-auto bg-white rounded-2xl border-2 border-nouvo-green/30 p-6">
+      <main class="bg-white rounded-2xl border-2 border-nouvo-green/20 p-6 overflow-y-auto">
         <BusinessTab v-if="activeTab === 'business'" />
         <ReceiptTab v-else-if="activeTab === 'receipt'" />
         <PrinterTab v-else-if="activeTab === 'printer'" />
@@ -80,13 +69,16 @@ import SystemTab from './tabs/SystemTab.vue'
 const router = useRouter()
 const auth = useAuthStore()
 
-const activeTab = ref('business')
-const tabs = [
-  { id: 'business', label: 'Business' },
-  { id: 'receipt', label: 'Receipt' },
-  { id: 'printer', label: 'Printer' },
-  { id: 'orders', label: 'Orders' },
-  { id: 'system', label: 'System' }
+type TabId = 'business' | 'receipt' | 'printer' | 'orders' | 'system'
+
+const activeTab = ref<TabId>('business')
+
+const tabs: Array<{ id: TabId; label: string; icon: string }> = [
+  { id: 'business', label: 'Business', icon: '🏢' },
+  { id: 'receipt', label: 'Receipt', icon: '🧾' },
+  { id: 'printer', label: 'Printer', icon: '🖨️' },
+  { id: 'orders', label: 'Orders', icon: '📋' },
+  { id: 'system', label: 'System', icon: '⚙️' }
 ]
 
 const userName = computed(() => auth.user?.username ?? 'User')
@@ -97,19 +89,14 @@ const userRole = computed(() => {
 })
 
 const navTabs = [
-  { path: '/home', label: 'Dashboard', query: {} },
-  { path: '/orders', label: 'Orders', query: {} },
-  { path: '/menu', label: 'Menu', query: {} },
-  { path: '/reports', label: 'Reports', query: { from: 'dashboard' } },
-  { path: '/settings', label: 'Settings', query: {} }
+  { path: '/home', label: 'Dashboard' },
+  { path: '/orders', label: 'Orders' },
+  { path: '/menu', label: 'Menu' },
+  { path: '/order-timer', label: 'Order Timer' },
+  { path: '/reports', label: 'Reports' },
+  { path: '/settings', label: 'Settings' }
 ]
 
-function navigate(tab: any) {
-  router.push({ path: tab.path, query: tab.query })
-}
-
-async function logout() {
-  await auth.logout()
-  router.push('/login')
-}
+function navigate(tab: any) { router.push(tab.path) }
+async function logout() { await auth.logout(); router.push('/login') }
 </script>

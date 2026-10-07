@@ -68,6 +68,7 @@ const navTabs = [
   { path: '/home', label: 'Dashboard', query: {} },
   { path: '/orders', label: 'Orders', query: {} },
   { path: '/menu', label: 'Menu', query: {} },
+  { path: '/order-timer', label: 'Order Timer', query: {} },
   { path: '/reports', label: 'Reports', query: { from: 'dashboard' } },
   { path: '/settings', label: 'Settings', query: {} }
 ]

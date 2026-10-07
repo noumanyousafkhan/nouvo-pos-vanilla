@@ -1,41 +1,41 @@
 import { getDatabase } from '../database/Database'
-import { logger } from '../utils/logger'
-import { AuditService } from '../audit/AuditService'
-import { BusinessSettingsSchema, ReceiptSettingsSchema, PrinterSettingsSchema, OrderSettingsSchema, SystemSettingsSchema } from './schemas'
 
 export class SettingsService {
+  // ═══════════════════════════════════════════════════════
+  // GENERIC GETTERS
+  // ═══════════════════════════════════════════════════════
   static get(key: string): string | null {
     const db = getDatabase()
     const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
     return row?.value ?? null
   }
 
-  static set(key: string, value: string, userId?: number): void {
+  static set(key: string, value: string): void {
     const db = getDatabase()
     db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+      INSERT INTO settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `).run(key, value)
-    AuditService.log('settings.updated', { key }, userId)
   }
 
   static getAll(): Record<string, string> {
     const db = getDatabase()
     const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[]
-    return Object.fromEntries(rows.map(r => [r.key, r.value]))
+    const out: Record<string, string> = {}
+    for (const r of rows) out[r.key] = r.value
+    return out
   }
 
   static getBoolean(key: string, fallback = false): boolean {
     const v = this.get(key)
     if (v === null) return fallback
-    return v === 'true' || v === '1'
+    return v === '1' || v.toLowerCase() === 'true'
   }
 
   static getNumber(key: string, fallback = 0): number {
     const v = this.get(key)
     if (v === null) return fallback
-    const n = parseFloat(v)
+    const n = Number(v)
     return isNaN(n) ? fallback : n
   }
 
@@ -49,16 +49,19 @@ export class SettingsService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // BUSINESS
+  // ═══════════════════════════════════════════════════════
   static getBusiness() {
     return {
-      name: this.get('business.name') ?? 'NOUVO POS Vanilla',
+      name: this.get('business.name') ?? 'NOUVO POS VANILLA',
       logo_path: this.get('business.logo_path') ?? '',
-      address: this.get('business.address') ?? 'Mansehra KPK Pakistan',
-      phone_1: this.get('business.phone_1') ?? '03114521220',
+      address: this.get('business.address') ?? '',
+      phone_1: this.get('business.phone_1') ?? '',
       phone_2: this.get('business.phone_2') ?? '',
-      email: this.get('business.email') ?? 'havenirnomi@gmail.com',
+      email: this.get('business.email') ?? '',
       website: this.get('business.website') ?? '',
-      slogan: this.get('business.slogan') ?? 'NOUVO POS By: Nouman Khan',
+      slogan: this.get('business.slogan') ?? '',
       currency_symbol: this.get('business.currency_symbol') ?? 'Rs.',
       currency_code: this.get('business.currency_code') ?? 'PKR',
       tax_rate: this.getNumber('business.tax_rate', 0),
@@ -67,6 +70,18 @@ export class SettingsService {
     }
   }
 
+  static updateBusiness(data: Partial<ReturnType<typeof SettingsService.getBusiness>>): void {
+    for (const [k, v] of Object.entries(data)) {
+      if (v === undefined || v === null) continue
+      const key = `business.${k}`
+      const value = typeof v === 'boolean' ? (v ? '1' : '0') : String(v)
+      this.set(key, value)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // RECEIPT
+  // ═══════════════════════════════════════════════════════
   static getReceipt() {
     return {
       header_line_1: this.get('receipt.header_line_1') ?? '',
@@ -87,6 +102,18 @@ export class SettingsService {
     }
   }
 
+  static updateReceipt(data: Partial<ReturnType<typeof SettingsService.getReceipt>>): void {
+    for (const [k, v] of Object.entries(data)) {
+      if (v === undefined || v === null) continue
+      const key = `receipt.${k}`
+      const value = typeof v === 'boolean' ? (v ? '1' : '0') : String(v)
+      this.set(key, value)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PRINTER
+  // ═══════════════════════════════════════════════════════
   static getPrinter() {
     return {
       name: this.get('printer.name') ?? '',
@@ -101,6 +128,18 @@ export class SettingsService {
     }
   }
 
+  static updatePrinter(data: Partial<ReturnType<typeof SettingsService.getPrinter>>): void {
+    for (const [k, v] of Object.entries(data)) {
+      if (v === undefined || v === null) continue
+      const key = `printer.${k}`
+      const value = typeof v === 'boolean' ? (v ? '1' : '0') : String(v)
+      this.set(key, value)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // ORDER
+  // ═══════════════════════════════════════════════════════
   static getOrder() {
     return {
       delivery_charge_default: this.getNumber('order.delivery_charge_default', 0),
@@ -113,10 +152,27 @@ export class SettingsService {
       invoice_prefix: this.get('order.invoice_prefix') ?? 'INV',
       order_prefix: this.get('order.order_prefix') ?? 'ORD',
       discount_enabled: this.getBoolean('order.discount_enabled', true),
-      discount_max_percent: this.getNumber('order.discount_max_percent', 100)
+      discount_max_percent: this.getNumber('order.discount_max_percent', 100),
+      // ⭐ NEW: Order Timer
+      prep_time_minutes: this.getNumber('order.prep_time_minutes', 40)
     }
   }
 
+  static updateOrder(data: Partial<ReturnType<typeof SettingsService.getOrder>>): void {
+    for (const [k, v] of Object.entries(data)) {
+      if (v === undefined || v === null) continue
+      const key = `order.${k}`
+      let value: string
+      if (typeof v === 'boolean') value = v ? '1' : '0'
+      else if (typeof v === 'object') value = JSON.stringify(v)
+      else value = String(v)
+      this.set(key, value)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // SYSTEM
+  // ═══════════════════════════════════════════════════════
   static getSystem() {
     return {
       backup_enabled: this.getBoolean('system.backup_enabled', true),
@@ -133,39 +189,12 @@ export class SettingsService {
     }
   }
 
-  static updateBusiness(data: unknown, userId?: number) {
-    const parsed = BusinessSettingsSchema.parse(data)
-    for (const [k, v] of Object.entries(parsed)) {
-      this.set(`business.${k}`, typeof v === 'boolean' ? String(v) : String(v), userId)
-    }
-  }
-
-  static updateReceipt(data: unknown, userId?: number) {
-    const parsed = ReceiptSettingsSchema.parse(data)
-    for (const [k, v] of Object.entries(parsed)) {
-      this.set(`receipt.${k}`, typeof v === 'boolean' ? String(v) : String(v), userId)
-    }
-  }
-
-  static updatePrinter(data: unknown, userId?: number) {
-    const parsed = PrinterSettingsSchema.parse(data)
-    for (const [k, v] of Object.entries(parsed)) {
-      this.set(`printer.${k}`, typeof v === 'boolean' ? String(v) : String(v), userId)
-    }
-  }
-
-  static updateOrder(data: unknown, userId?: number) {
-    const parsed = OrderSettingsSchema.parse(data)
-    for (const [k, v] of Object.entries(parsed)) {
-      const val = Array.isArray(v) ? JSON.stringify(v) : (typeof v === 'boolean' ? String(v) : String(v))
-      this.set(`order.${k}`, val, userId)
-    }
-  }
-
-  static updateSystem(data: unknown, userId?: number) {
-    const parsed = SystemSettingsSchema.parse(data)
-    for (const [k, v] of Object.entries(parsed)) {
-      this.set(`system.${k}`, typeof v === 'boolean' ? String(v) : String(v), userId)
+  static updateSystem(data: Partial<ReturnType<typeof SettingsService.getSystem>>): void {
+    for (const [k, v] of Object.entries(data)) {
+      if (v === undefined || v === null) continue
+      const key = `system.${k}`
+      const value = typeof v === 'boolean' ? (v ? '1' : '0') : String(v)
+      this.set(key, value)
     }
   }
 }
