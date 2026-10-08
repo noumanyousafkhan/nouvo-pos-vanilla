@@ -82,12 +82,16 @@ const filters = ref({
   includeVoided: false
 })
 
+/**
+ * Default data shape — matches backend response.
+ * Kept as fallback so UI never crashes on empty responses.
+ */
 const data = ref<any>({
   kpis: {
     revenue: 0,
-    revenueTrend: 0,
+    revenueTrend: null,
     orderCount: 0,
-    orderTrend: 0,
+    orderTrend: null,
     avgOrder: 0,
     performance: 'No Data',
     dineInCount: 0,
@@ -101,7 +105,15 @@ const data = ref<any>({
   orderTypeAnalysis: [],
   itemsPerformance: [],
   recentTransactions: [],
-  score: { score: 0, totalOrders: 0, voidedOrders: 0, complaints: [] }
+  score: {
+    score: 0,
+    totalOrders: 0,
+    voidedOrders: 0,
+    metrics: [
+      { label: 'Voided Orders', value: 0, isAlert: false },
+      { label: 'Success Rate', value: '100%', isAlert: false }
+    ]
+  }
 })
 
 async function loadAll() {

@@ -17,48 +17,81 @@ export class ReportService {
   // ═══════════════════════════════════════════════════════
   private static resolveRange(parsed: any): RangeDates {
     if (parsed.range === 'all') return { from: null, to: null }
+
+    const pad = (n: number, l = 2) => String(n).padStart(l, '0')
+    const fmtUtc = (d: Date) =>
+      `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+      `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
+
     if (parsed.range === 'custom') {
-      return {
-        from: parsed.dateFrom ?? null,
-        to: parsed.dateTo ?? null
-      }
+      const from = parsed.dateFrom
+        ? `${String(parsed.dateFrom).slice(0, 10)} 00:00:00`
+        : null
+      const to = parsed.dateTo
+        ? `${String(parsed.dateTo).slice(0, 10)} 23:59:59`
+        : null
+      return { from, to }
     }
 
     const now = new Date()
-    const start = new Date(now)
-    const end = new Date(now)
+
+    const startOfUtcDay = (d: Date) =>
+      new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0))
+    const endOfUtcDay = (d: Date) =>
+      new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999))
+
+    let start: Date
+    let end: Date
 
     switch (parsed.range) {
-      case 'today':
-        start.setHours(0, 0, 0, 0)
-        end.setHours(23, 59, 59, 999)
-        break
-      case 'week': {
-        const day = start.getDay()
-        const diff = start.getDate() - day + (day === 0 ? -6 : 1)
-        start.setDate(diff)
-        start.setHours(0, 0, 0, 0)
-        end.setHours(23, 59, 59, 999)
+      case 'today': {
+        start = startOfUtcDay(now)
+        end = endOfUtcDay(now)
         break
       }
-      case 'month':
-        start.setDate(1)
-        start.setHours(0, 0, 0, 0)
-        end.setHours(23, 59, 59, 999)
+      case 'week': {
+        const day = now.getUTCDay()
+        const diff = day === 0 ? -6 : 1 - day
+        const monday = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate() + diff
+        ))
+        start = startOfUtcDay(monday)
+        const sunday = new Date(Date.UTC(
+          monday.getUTCFullYear(),
+          monday.getUTCMonth(),
+          monday.getUTCDate() + 6
+        ))
+        end = endOfUtcDay(sunday)
         break
-      case 'year':
-        start.setMonth(0, 1)
-        start.setHours(0, 0, 0, 0)
-        end.setHours(23, 59, 59, 999)
+      }
+      case 'month': {
+        start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0))
+        end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999))
         break
+      }
+      case 'year': {
+        start = new Date(Date.UTC(now.getUTCFullYear(), 0, 1, 0, 0, 0, 0))
+        end = new Date(Date.UTC(now.getUTCFullYear(), 11, 31, 23, 59, 59, 999))
+        break
+      }
       default:
         return { from: null, to: null }
     }
 
-    return { from: start.toISOString(), to: end.toISOString() }
+    return { from: fmtUtc(start), to: fmtUtc(end) }
   }
 
-  private static buildWhere(parsed: any, range: RangeDates, alias = ''): { sql: string; params: any[] } {
+  // ═══════════════════════════════════════════════════════
+  // BUILD WHERE
+  // ═══════════════════════════════════════════════════════
+  private static buildWhere(
+    parsed: any,
+    range: RangeDates,
+    alias = '',
+    options: { forceIncludeVoided?: boolean } = {}
+  ): { sql: string; params: any[] } {
     const prefix = alias ? `${alias}.` : ''
     const conditions: string[] = []
     const params: any[] = []
@@ -81,8 +114,8 @@ export class ReportService {
       params.push(parsed.paymentMethod)
     }
 
-    // By default exclude voided orders unless explicitly included
-    if (!parsed.includeVoided) {
+    const includeVoided = options.forceIncludeVoided || parsed.includeVoided
+    if (!includeVoided) {
       conditions.push(`${prefix}status != 'voided'`)
     }
 
@@ -92,16 +125,26 @@ export class ReportService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // PREVIOUS PERIOD STATS
+  // ═══════════════════════════════════════════════════════
   private static getPreviousPeriodStats(parsed: any, range: RangeDates) {
     const db = getDatabase()
-    if (!range.from || !range.to) return { revenue: 0, order_count: 0 }
+    if (!range.from || !range.to) {
+      return { revenue: null, order_count: null }
+    }
 
-    const from = new Date(range.from)
-    const to = new Date(range.to)
-    const duration = to.getTime() - from.getTime()
+    const fromMs = new Date(range.from.replace(' ', 'T') + 'Z').getTime()
+    const toMs = new Date(range.to.replace(' ', 'T') + 'Z').getTime()
+    const duration = toMs - fromMs
 
-    const prevFrom = new Date(from.getTime() - duration).toISOString()
-    const prevTo = from.toISOString()
+    const pad = (n: number, l = 2) => String(n).padStart(l, '0')
+    const fmtUtc = (d: Date) =>
+      `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+      `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
+
+    const prevFrom = fmtUtc(new Date(fromMs - duration))
+    const prevTo = fmtUtc(new Date(fromMs - 1))
 
     const row = db.prepare(`
       SELECT
@@ -111,11 +154,14 @@ export class ReportService {
       WHERE created_at >= ? AND created_at <= ? AND status != 'voided'
     `).get(prevFrom, prevTo) as any
 
-    return { revenue: row?.revenue || 0, order_count: row?.order_count || 0 }
+    return {
+      revenue: row?.revenue ?? 0,
+      order_count: row?.order_count ?? 0
+    }
   }
 
   // ═══════════════════════════════════════════════════════
-  // KPIs
+  // KPIs  ⭐ FIX N1
   // ═══════════════════════════════════════════════════════
   static getKpis(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
@@ -136,12 +182,23 @@ export class ReportService {
 
     const previous = this.getPreviousPeriodStats(parsed, range)
 
-    const revenueTrend = previous.revenue > 0
-      ? ((row.revenue - previous.revenue) / previous.revenue) * 100
-      : 0
-    const orderTrend = previous.order_count > 0
-      ? ((row.order_count - previous.order_count) / previous.order_count) * 100
-      : 0
+    let revenueTrend: number | null = null
+    let orderTrend: number | null = null
+
+    if (
+      row.order_count > 0 &&
+      previous.revenue !== null &&
+      previous.revenue > 0
+    ) {
+      revenueTrend = ((row.revenue - previous.revenue) / previous.revenue) * 100
+    }
+    if (
+      row.order_count > 0 &&
+      previous.order_count !== null &&
+      previous.order_count > 0
+    ) {
+      orderTrend = ((row.order_count - previous.order_count) / previous.order_count) * 100
+    }
 
     const target = SettingsService.getNumber('reports.performance_target', 100)
     let performance = 'Good'
@@ -152,9 +209,9 @@ export class ReportService {
 
     return {
       revenue: Math.round(row.revenue * 100) / 100,
-      revenueTrend: Math.round(revenueTrend * 10) / 10,
+      revenueTrend: revenueTrend === null ? null : Math.round(revenueTrend * 10) / 10,
       orderCount: row.order_count,
-      orderTrend: Math.round(orderTrend * 10) / 10,
+      orderTrend: orderTrend === null ? null : Math.round(orderTrend * 10) / 10,
       avgOrder: Math.round(row.avg_order * 100) / 100,
       performance,
       dineInCount: row.dine_in_count,
@@ -164,7 +221,7 @@ export class ReportService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // SALES CHART
+  // SALES CHART  ⭐ FIX N4 (week/month smart bucketing)
   // ═══════════════════════════════════════════════════════
   static getSalesChart(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
@@ -177,13 +234,35 @@ export class ReportService {
     if (parsed.range === 'today') {
       groupExpr = "strftime('%H', o.created_at)"
       format = 'hour'
-    } else if (parsed.range === 'week' || parsed.range === 'month') {
-      groupExpr = "strftime('%Y-%m-%d', o.created_at)"
-      format = 'day'
-    } else if (parsed.range === 'all') {
-      // 'all' → daily buckets (best for up to ~90 days of data)
-      groupExpr = "strftime('%Y-%m-%d', o.created_at)"
-      format = 'day'
+    } else if (
+      parsed.range === 'week' ||
+      parsed.range === 'month' ||
+      parsed.range === 'all' ||
+      parsed.range === 'custom'
+    ) {
+      // ⭐ FIX N4: Smart bucketing for week/month/all/custom
+      //   0-1 unique days  → hourly
+      //   2-60 unique days → daily
+      //   61+ unique days  → monthly
+      const where = this.buildWhere(parsed, range, 'o')
+      const spanRow = db.prepare(`
+        SELECT
+          COUNT(DISTINCT date(o.created_at)) as unique_days
+        FROM orders o${where.sql}
+      `).get(...where.params) as any
+
+      const uniqueDays = spanRow?.unique_days || 0
+
+      if (uniqueDays <= 1) {
+        groupExpr = "strftime('%Y-%m-%d %H', o.created_at)"
+        format = 'hour'
+      } else if (uniqueDays <= 60) {
+        groupExpr = "strftime('%Y-%m-%d', o.created_at)"
+        format = 'day'
+      } else {
+        groupExpr = "strftime('%Y-%m', o.created_at)"
+        format = 'month'
+      }
     } else if (parsed.range === 'year') {
       groupExpr = "strftime('%Y-%m', o.created_at)"
       format = 'month'
@@ -194,7 +273,6 @@ export class ReportService {
 
     const where = this.buildWhere(parsed, range, 'o')
 
-    // Total buckets
     const rows = db.prepare(`
       SELECT
         ${groupExpr} as bucket,
@@ -205,7 +283,6 @@ export class ReportService {
       ORDER BY bucket ASC
     `).all(...where.params) as any[]
 
-    // Per-category series
     const categoryRows = db.prepare(`
       SELECT
         ${groupExpr} as bucket,
@@ -221,7 +298,6 @@ export class ReportService {
       ORDER BY bucket ASC
     `).all(...where.params) as any[]
 
-    // Top 3 categories
     const catTotals: Record<number, { id: number; name: string; total: number }> = {}
     for (const r of categoryRows) {
       if (!r.category_id) continue
@@ -253,7 +329,7 @@ export class ReportService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // TOP PRODUCTS (with deal children expansion)
+  // TOP PRODUCTS
   // ═══════════════════════════════════════════════════════
   static getTopProducts(filters: unknown) {
     const parsed = TopProductsFiltersSchema.parse(filters)
@@ -355,7 +431,7 @@ export class ReportService {
     const where = this.buildWhere(parsed, range, 'o')
     const db = getDatabase()
 
-    const rows = db.prepare(`
+    const regularRows = db.prepare(`
       SELECT
         c.id as category_id,
         c.name as category_name,
@@ -365,20 +441,52 @@ export class ReportService {
       JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id
       LEFT JOIN categories c ON c.id = p.category_id
-      ${where.sql}
+      ${where.sql} AND oi.deal_id IS NULL
       GROUP BY c.id, c.name
       ORDER BY revenue DESC
     `).all(...where.params) as any[]
 
-    const total = rows.reduce((s, r) => s + (r.revenue || 0), 0)
+    const dealRow = db.prepare(`
+      SELECT
+        COUNT(*) as qty,
+        COALESCE(SUM(oi.line_total), 0) as revenue
+      FROM orders o
+      JOIN order_items oi ON oi.order_id = o.id
+      ${where.sql} AND oi.deal_id IS NOT NULL
+    `).get(...where.params) as any
 
-    return rows.map((r) => ({
-      category_id: r.category_id,
-      category_name: r.category_name || 'Uncategorized',
-      qty: r.qty,
-      revenue: Math.round(r.revenue * 100) / 100,
-      percentage: total > 0 ? (r.revenue / total) * 100 : 0
-    }))
+    const allRows: Array<{ category_id: number | null; category_name: string; qty: number; revenue: number }> = []
+
+    for (const r of regularRows) {
+      if (r.category_id === null || r.category_id === undefined) continue
+      allRows.push({
+        category_id: r.category_id,
+        category_name: r.category_name || 'Uncategorized',
+        qty: r.qty,
+        revenue: r.revenue
+      })
+    }
+
+    if (dealRow && Number(dealRow.qty) > 0) {
+      allRows.push({
+        category_id: -1,
+        category_name: 'Deals',
+        qty: Number(dealRow.qty),
+        revenue: Number(dealRow.revenue)
+      })
+    }
+
+    const total = allRows.reduce((s, r) => s + (r.revenue || 0), 0)
+
+    return allRows
+      .sort((a, b) => b.revenue - a.revenue)
+      .map((r) => ({
+        category_id: r.category_id,
+        category_name: r.category_name,
+        qty: r.qty,
+        revenue: Math.round(r.revenue * 100) / 100,
+        percentage: total > 0 ? (r.revenue / total) * 100 : 0
+      }))
   }
 
   // ═══════════════════════════════════════════════════════
@@ -440,7 +548,7 @@ export class ReportService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // ITEMS PERFORMANCE (with deal children expansion)
+  // ITEMS PERFORMANCE
   // ═══════════════════════════════════════════════════════
   static getItemsPerformance(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
@@ -523,14 +631,13 @@ export class ReportService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // SCORE — FIXED (was causing SQLITE_ERROR near "AND")
+  // SCORE  ⭐ FIX N3
   // ═══════════════════════════════════════════════════════
   static getScore(filters: unknown) {
     const parsed = ReportFiltersSchema.parse(filters)
     const range = this.resolveRange(parsed)
     const db = getDatabase()
 
-    // Total orders (including voided)
     const totalWhere = this.buildWhere({ ...parsed, includeVoided: true }, range)
     const totalRow = db.prepare(`
       SELECT COUNT(*) as count FROM orders${totalWhere.sql}
@@ -538,7 +645,6 @@ export class ReportService {
 
     const totalOrders = totalRow?.count || 0
 
-    // Voided orders — build SQL safely (WHERE + AND)
     const voidedWhere = this.buildWhere({ ...parsed, includeVoided: true }, range)
     const voidedSql = voidedWhere.sql
       ? `${voidedWhere.sql} AND status = 'voided'`
@@ -549,7 +655,6 @@ export class ReportService {
 
     const voidedOrders = voidedRow?.count || 0
 
-    // Score calculation
     let score = 100
     if (totalOrders > 0) {
       const voidRatio = voidedOrders / totalOrders
@@ -566,10 +671,12 @@ export class ReportService {
       score,
       totalOrders,
       voidedOrders,
-      complaints: [
-        { label: 'Voided Orders', value: voidedOrders },
-        { label: 'Success Rate', value: `${successRate}%` }
-      ]
+      metrics: totalOrders === 0
+        ? []
+        : [
+            { label: 'Voided Orders', value: voidedOrders, isAlert: voidedOrders > 0 },
+            { label: 'Success Rate', value: `${successRate}%`, isAlert: successRate < 90 }
+          ]
     }
   }
 
