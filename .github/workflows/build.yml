@@ -1,0 +1,108 @@
+name: Build Installers
+
+on:
+  push:
+    tags:
+      - 'v*'    # Tag push pe hi build — v1.0.0, v0.2.0
+  workflow_dispatch:    # Manual trigger bhi
+
+jobs:
+  # ═══════════════════════════════════════════════════════
+  # WINDOWS BUILD
+  # ═══════════════════════════════════════════════════════
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build Windows installer
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            release/*.exe
+            release/*.blockmap
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════
+  # LINUX BUILD
+  # ═══════════════════════════════════════════════════════
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build Linux installers
+        run: npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers
+          path: |
+            release/*.AppImage
+            release/*.deb
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════
+  # RELEASE (manual publish)
+  # ═══════════════════════════════════════════════════════
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: release/
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-installers
+          path: release/
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true    # ⭐ DRAFT — manual publish
+          generate_release_notes: true
+          files: |
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
