@@ -1,21 +1,30 @@
 <template>
   <div
-    class="absolute right-0 top-[60px] w-[340px] bg-white border border-nouvo-gray-border rounded-2xl shadow-2xl z-50 overflow-hidden"
+    class="absolute right-0 top-[60px] w-[360px] bg-white border border-nouvo-gray-border rounded-2xl shadow-2xl z-50 overflow-hidden"
   >
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-nouvo-gray-border">
       <div class="flex items-center gap-2">
         <span class="text-[13px] font-bold text-nouvo-ink">Notifications</span>
         <span
-          v-if="totalCount > 0"
+          v-if="unreadCount > 0"
           class="text-[10px] font-bold bg-nouvo-red text-white px-1.5 py-0.5 rounded-full"
-        >{{ totalCount }}</span>
+        >{{ unreadCount }}</span>
       </div>
-      <button
-        type="button"
-        class="cursor-pointer w-7 h-7 rounded-lg hover:bg-nouvo-cream text-nouvo-gray"
-        @click="$emit('close')"
-      >✕</button>
+      <div class="flex items-center gap-1">
+        <button
+          v-if="unreadCount > 0"
+          type="button"
+          class="cursor-pointer text-[10px] font-semibold text-nouvo-green hover:bg-nouvo-cream rounded-lg px-2 py-1"
+          title="Mark all as read"
+          @click="markAllRead"
+        >Mark all read</button>
+        <button
+          type="button"
+          class="cursor-pointer w-7 h-7 rounded-lg hover:bg-nouvo-cream text-nouvo-gray flex items-center justify-center"
+          @click="$emit('close')"
+        >✕</button>
+      </div>
     </div>
 
     <!-- Body -->
@@ -34,16 +43,32 @@
         <div
           v-for="(n, i) in notifications"
           :key="i"
-          class="flex items-start gap-3 px-4 py-3 hover:bg-nouvo-cream/40 transition-colors cursor-pointer"
-          @click="handleClick(n)"
+          class="flex items-start gap-3 px-4 py-3 hover:bg-nouvo-cream/40 transition-colors cursor-pointer relative"
+          :class="{ 'bg-nouvo-green/5': !n.read }"
+          @click="handleClick(n, i)"
         >
+          <!-- Unread dot -->
+          <span
+            v-if="!n.read"
+            class="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-nouvo-green"
+          ></span>
+
+          <!-- Icon -->
           <div
             class="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-base"
             :class="iconBg(n.type)"
           >{{ n.icon }}</div>
+
+          <!-- Content -->
           <div class="flex-1 min-w-0">
-            <div class="text-[12px] font-bold text-nouvo-ink leading-tight">{{ n.title }}</div>
-            <div class="text-[11px] text-nouvo-gray mt-0.5">{{ n.message }}</div>
+            <div
+              class="text-[12px] leading-tight"
+              :class="n.read ? 'text-nouvo-ink/70 font-medium' : 'text-nouvo-ink font-bold'"
+            >{{ n.title }}</div>
+            <div
+              class="text-[11px] mt-0.5"
+              :class="n.read ? 'text-nouvo-gray/70' : 'text-nouvo-gray'"
+            >{{ n.message }}</div>
             <div v-if="n.time" class="text-[10px] text-nouvo-gray/80 mt-1">{{ n.time }}</div>
           </div>
         </div>
@@ -53,7 +78,7 @@
     <!-- Footer -->
     <div v-if="notifications.length > 0" class="px-4 py-2 border-t border-nouvo-gray-border bg-nouvo-cream/40">
       <div class="text-[10px] text-nouvo-gray text-center">
-        Notifications update every 30 seconds
+        Updates every 30 seconds
       </div>
     </div>
   </div>
@@ -73,13 +98,36 @@ interface Notification {
   title: string
   message: string
   time?: string
+  timestampMs?: number
   path?: string
+  read?: boolean
 }
 
 const loading = ref(false)
 const notifications = ref<Notification[]>([])
 
-const totalCount = computed(() => notifications.value.length)
+/**
+ * localStorage key for last read timestamp.
+ * All notifications older than this are "read".
+ */
+const LS_KEY = 'nouvo.notif.lastReadAt'
+
+function getLastReadAt(): number {
+  try {
+    const v = localStorage.getItem(LS_KEY)
+    return v ? Number(v) : 0
+  } catch {
+    return 0
+  }
+}
+
+function setLastReadAt(ms: number) {
+  try {
+    localStorage.setItem(LS_KEY, String(ms))
+  } catch {}
+}
+
+const unreadCount = computed(() => notifications.value.filter((n) => !n.read).length)
 
 function iconBg(type: string): string {
   if (type === 'new-order') return 'bg-nouvo-green/10 text-nouvo-green'
@@ -105,8 +153,11 @@ function timeAgo(iso: string): string {
 async function loadNotifications() {
   loading.value = true
   const list: Notification[] = []
+  const lastReadAt = getLastReadAt()
 
-  // 1. New orders — last 30 minutes
+  // ═══════════════════════════════════════════════════════
+  // 1. New orders — last 30 min
+  // ═══════════════════════════════════════════════════════
   const activeRes = await invokeSafe<any>('orders:listActive')
   if (activeRes.ok && activeRes.data) {
     const now = Date.now()
@@ -115,17 +166,22 @@ async function loadNotifications() {
       return ms < 30 * 60 * 1000
     })
     if (recent.length > 0) {
+      const newest = recent[recent.length - 1]
+      const newestMs = new Date(newest.created_at.replace(' ', 'T') + 'Z').getTime()
       list.push({
         type: 'new-order',
         icon: '📦',
         title: `${recent.length} new order${recent.length > 1 ? 's' : ''}`,
         message: `Order #${recent.map((o: any) => o.order_number.split('-').pop()).slice(0, 3).join(', #')}${recent.length > 3 ? '...' : ''}`,
-        time: timeAgo(recent[recent.length - 1].created_at),
+        time: timeAgo(newest.created_at),
+        timestampMs: newestMs,
         path: '/order-timer'
       })
     }
 
+    // ═══════════════════════════════════════════════════════
     // 2. Timer critical — ≤ 5 min
+    // ═══════════════════════════════════════════════════════
     const PREP_DEFAULT = 40
     const critical = activeRes.data.filter((o: any) => {
       const created = new Date(o.created_at.replace(' ', 'T') + 'Z').getTime()
@@ -138,22 +194,27 @@ async function loadNotifications() {
         icon: '⚠️',
         title: `${critical.length} order${critical.length > 1 ? 's' : ''} about to delay`,
         message: 'Less than 5 minutes remaining',
+        timestampMs: now,  // ⭐ critical notifications are always fresh
         path: '/order-timer'
       })
     }
   }
 
-  // 3. Backup status — last backup time
+  // ═══════════════════════════════════════════════════════
+  // 3. Backup status
+  // ═══════════════════════════════════════════════════════
   try {
     const backupRes = await invokeSafe<any>('backup:list')
     if (backupRes.ok && backupRes.data && backupRes.data.length > 0) {
       const last = backupRes.data[0]
+      const ts = last.created_at ? new Date(last.created_at).getTime() : Date.now()
       list.push({
         type: 'backup',
         icon: '💾',
         title: 'Backup available',
         message: `Last backup: ${last.created_at ? timeAgo(last.created_at) : 'unknown'}`,
         time: last.created_at ? timeAgo(last.created_at) : '',
+        timestampMs: ts,
         path: '/settings'
       })
     } else {
@@ -162,12 +223,15 @@ async function loadNotifications() {
         icon: '💾',
         title: 'No backups yet',
         message: 'Create a backup in Settings',
+        timestampMs: 0,
         path: '/settings'
       })
     }
   } catch {}
 
+  // ═══════════════════════════════════════════════════════
   // 4. Voided today
+  // ═══════════════════════════════════════════════════════
   try {
     const voidedRes = await invokeSafe<any>('orders:list', {
       range: 'today',
@@ -184,26 +248,57 @@ async function loadNotifications() {
           icon: '🚫',
           title: `${count} voided order${count > 1 ? 's' : ''} today`,
           message: 'Check Order History for details',
+          timestampMs: Date.now(),  // todays voided — treat as fresh
           path: '/orders'
         })
       }
     }
   } catch {}
 
-  // 5. License — placeholder
+  // ═══════════════════════════════════════════════════════
+  // 5. License placeholder
+  // ═══════════════════════════════════════════════════════
   list.push({
     type: 'license',
     icon: '🔑',
     title: 'License active',
     message: 'Activation system coming soon',
+    timestampMs: 0,
     path: '/settings'
   })
+
+  // ═══════════════════════════════════════════════════════
+  // Compute read state based on lastReadAt
+  // ═══════════════════════════════════════════════════════
+  for (const n of list) {
+    n.read = (n.timestampMs ?? 0) <= lastReadAt
+  }
 
   notifications.value = list
   loading.value = false
 }
 
-function handleClick(n: Notification) {
+function markAllRead() {
+  // Save current time as last-read
+  setLastReadAt(Date.now())
+  // Update local state
+  for (const n of notifications.value) {
+    n.read = true
+  }
+  emit('navigate', '')  // trigger parent to update dot
+}
+
+function handleClick(n: Notification, i: number) {
+  // Mark this one as read (update timestamp if newer than lastReadAt)
+  if (!n.read && n.timestampMs) {
+    const lastRead = getLastReadAt()
+    if (n.timestampMs > lastRead) {
+      setLastReadAt(n.timestampMs)
+      n.read = true
+      emit('navigate', '')
+    }
+  }
+  // Navigate
   if (n.path) {
     router.push(n.path)
     emit('close')

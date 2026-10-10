@@ -78,6 +78,7 @@
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
           </svg>
+          <!-- ⭐ Red dot — only when unreadCount > 0 -->
           <span
             v-if="unreadCount > 0"
             class="absolute top-2 right-2 w-2 h-2 rounded-full bg-nouvo-red border border-white"
@@ -86,7 +87,8 @@
 
         <NotificationsDropdown
           v-if="showNotifications"
-          @close="showNotifications = false"
+          @close="onDropdownClose"
+          @navigate="refreshUnread"
         />
       </div>
 
@@ -115,7 +117,12 @@ const store = useSettingsStore()
 const totalOrders = ref(0)
 
 const showNotifications = ref(false)
-const unreadCount = ref(1) // keep dot visible — actual unread count could be computed
+const unreadCount = ref(0)
+
+/**
+ * localStorage key — same as NotificationsDropdown.vue
+ */
+const LS_KEY = 'nouvo.notif.lastReadAt'
 
 const userName = computed(() => auth.user?.username ?? 'User')
 const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
@@ -128,15 +135,46 @@ const today = computed(() =>
   new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })
 )
 
+/**
+ * Refresh the unread count.
+ * A notification is unread if its timestamp > localStorage lastReadAt.
+ * For simplicity, we check active orders — that's the most common notification.
+ */
+async function refreshUnread() {
+  try {
+    const lastRead = Number(localStorage.getItem(LS_KEY) || '0')
+    const activeRes = await invokeSafe<any>('orders:listActive')
+    if (activeRes.ok && activeRes.data) {
+      const unread = activeRes.data.filter((o: any) => {
+        const ms = new Date(o.created_at.replace(' ', 'T') + 'Z').getTime()
+        return ms > lastRead
+      })
+      unreadCount.value = unread.length > 0 ? unread.length : 0
+    } else {
+      unreadCount.value = 0
+    }
+  } catch {
+    unreadCount.value = 0
+  }
+}
+
 function toggleNotifications() {
   showNotifications.value = !showNotifications.value
-  if (showNotifications.value) unreadCount.value = 0
+}
+
+function onDropdownClose() {
+  showNotifications.value = false
+  // Refresh dot after dropdown closes
+  refreshUnread()
 }
 
 function onClickOutside(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target.closest('.relative')) {
-    showNotifications.value = false
+    if (showNotifications.value) {
+      showNotifications.value = false
+      refreshUnread()
+    }
   }
 }
 
@@ -155,7 +193,11 @@ onMounted(async () => {
     if (res.ok && res.data) totalOrders.value = res.data.total
   } catch {}
 
+  await refreshUnread()
   document.addEventListener('click', onClickOutside)
+
+  // Periodic refresh every 60 seconds
+  setInterval(refreshUnread, 60000)
 })
 
 onBeforeUnmount(() => {
