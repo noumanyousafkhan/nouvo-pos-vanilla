@@ -16,7 +16,7 @@ export default defineConfig({
             rollupOptions: {
               external: [
                 'better-sqlite3',
-                'argon2',
+                '@node-rs/argon2',
                 'node-machine-id',
                 'pino',
                 'pino-pretty',
