@@ -76,6 +76,10 @@ async function createWindow() {
   }
 }
 
+// ⭐ Disable sandbox for AppImage compatibility
+app.commandLine.appendSwitch('no-sandbox')
+app.commandLine.appendSwitch('disable-gpu-sandbox')
+
 app.whenReady().then(async () => {
   logger.info('App starting...')
   try {

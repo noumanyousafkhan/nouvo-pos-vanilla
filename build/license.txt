@@ -1,0 +1,37 @@
+NOUVO POS VANILLA — END USER LICENSE AGREEMENT
+
+Copyright (c) 2026 NOUVO. All rights reserved.
+
+IMPORTANT: PLEASE READ THIS LICENSE CAREFULLY BEFORE USING THIS SOFTWARE.
+
+1. LICENSE GRANT
+   This software is licensed, not sold. NOUVO grants you a non-exclusive,
+   non-transferable license to use this software on a single computer
+   for your business purposes.
+
+2. RESTRICTIONS
+   You may NOT:
+   - Copy, modify, or distribute this software
+   - Reverse engineer, decompile, or disassemble this software
+   - Rent, lease, or lend this software
+   - Remove any copyright or proprietary notices
+
+3. DATA
+   All business data (orders, customers, products) remains your property.
+   NOUVO does not access or transmit your business data.
+
+4. WARRANTY
+   THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+   NOUVO SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING FROM THE USE OF
+   THIS SOFTWARE.
+
+5. TERMINATION
+   This license is effective until terminated. Your rights under this
+   license will terminate automatically without notice if you fail to
+   comply with any term of this license.
+
+6. SUPPORT
+   For support, contact: support@nouvo.example
+
+By installing and using this software, you agree to the terms of this
+license agreement.
