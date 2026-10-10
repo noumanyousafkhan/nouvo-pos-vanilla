@@ -50,8 +50,8 @@ const currency = ref('Rs.')
 function fileUrl(p: string): string {
   if (!p) return ''
   const normalized = p.replace(/\\/g, '/')
-  const prefix = normalized.startsWith('/') ? 'file://' : 'file:///'
-  return `${prefix}${normalized}`
+  // using nouvo-file protocol
+  return `nouvo-file:///${normalized}`
 }
 
 onMounted(async () => {

@@ -10,6 +10,7 @@ import { registerPrintingIpc } from './printing.ipc'
 import { registerReportsIpc } from './reports.ipc'
 import { registerExportIpc } from './export.ipc'
 import { registerBackupIpc } from './backup.ipc'
+import { registerLicenseIpc } from './license.ipc'
 
 export function registerIpcHandlers(): void {
   registerAppIpc()
@@ -22,6 +23,7 @@ export function registerIpcHandlers(): void {
   registerReportsIpc()
   registerExportIpc()
   registerBackupIpc()
+  registerLicenseIpc()
   logger.info('IPC handlers registered')
 }
 

@@ -10,14 +10,24 @@ export interface Category {
   is_active: number
   image_path: string
   created_at: string
+  product_count?: number
 }
 
 export class CategoryService {
   static list(includeInactive = false): Category[] {
     const db = getDatabase()
-    const sql = includeInactive
-      ? 'SELECT * FROM categories ORDER BY sort_order, name'
-      : 'SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, name'
+    const whereClause = includeInactive ? '' : 'WHERE c.is_active = 1'
+    
+    const sql = `
+      SELECT
+        c.*,
+        COUNT(p.id) AS product_count
+      FROM categories c
+      LEFT JOIN products p ON p.category_id = c.id AND p.is_deleted = 0
+      ${whereClause}
+      GROUP BY c.id
+      ORDER BY c.sort_order, c.name
+    `
     return db.prepare(sql).all() as Category[]
   }
 

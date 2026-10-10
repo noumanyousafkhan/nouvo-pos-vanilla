@@ -5,6 +5,7 @@ const router = createRouter({
   routes: [
     { path: '/', redirect: '/splash' },
     { path: '/splash', name: 'splash', component: () => import('@/features/splash/SplashView.vue') },
+    { path: '/activate', name: 'activate', component: () => import('@/features/activation/ActivationView.vue') },
     { path: '/setup', name: 'setup', component: () => import('@/features/auth/FirstRunSetupView.vue') },
     { path: '/login', name: 'login', component: () => import('@/features/auth/LoginView.vue') },
     { path: '/home', name: 'home', component: () => import('@/features/home/HomeView.vue') },

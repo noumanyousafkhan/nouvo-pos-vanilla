@@ -1,10 +1,8 @@
 <template>
-  <div class="h-screen bg-nouvo-cream flex flex-col">
+  <div class="h-screen flex flex-col bg-nouvo-cream overflow-hidden">
     <header class="h-16 bg-nouvo-green text-white flex items-center justify-between px-6 shrink-0">
       <div class="flex items-center gap-3 shrink-0">
-        <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold">
-          N
-        </div>
+        <NouvoLogo variant="fav" :size="44" rounded />
         <span class="font-bold tracking-wide text-[14px]">NOUVO POS</span>
       </div>
 
@@ -53,28 +51,26 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import NouvoLogo from '@/components/brand/NouvoLogo.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 
 const userName = computed(() => auth.user?.username ?? 'User')
+const userRole = computed(() => auth.user?.role ?? 'Cashier')
 const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
-const userRole = computed(() => {
-  const r = auth.user?.role ?? 'cashier'
-  return r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Cashier'
-})
 
 const navTabs = [
-  { path: '/home', label: 'Dashboard', query: {} },
-  { path: '/orders', label: 'Orders', query: {} },
-  { path: '/menu', label: 'Menu', query: {} },
-  { path: '/order-timer', label: 'Order Timer', query: {} },
-  { path: '/reports', label: 'Reports', query: { from: 'dashboard' } },
-  { path: '/settings', label: 'Settings', query: {} }
+  { label: 'Home', path: '/home' },
+  { label: 'Menu', path: '/menu' },
+  { label: 'Orders', path: '/orders' },
+  { label: 'Reports', path: '/reports' },
+  { label: '⏱ Order Timer', path: '/order-timer' },
+  { label: 'Settings', path: '/settings' }
 ]
 
-function navigate(tab: any) {
-  router.push({ path: tab.path, query: tab.query })
+function navigate(tab: { path: string }) {
+  router.push(tab.path)
 }
 
 async function logout() {

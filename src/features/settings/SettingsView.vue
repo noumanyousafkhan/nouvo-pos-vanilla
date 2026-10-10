@@ -1,10 +1,24 @@
 <template>
   <div class="h-screen flex flex-col bg-nouvo-cream overflow-hidden">
     <header class="h-16 bg-nouvo-green text-white flex items-center justify-between px-6 shrink-0">
+      <!-- Left: Business logo + name -->
       <div class="flex items-center gap-3 shrink-0">
-        <div class="w-9 h-9 rounded-full bg-nouvo-cream text-nouvo-green flex items-center justify-center font-bold">N</div>
-        <span class="font-bold tracking-wide text-[14px]">NOUVO POS</span>
+        <img
+          v-if="settingsStore.business.logo_path"
+          :src="fileUrl(settingsStore.business.logo_path)"
+          alt="Logo"
+          class="h-10 w-10 object-contain shrink-0"
+        />
+        <div v-else class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold">
+          {{ businessInitial }}
+        </div>
+        <div class="leading-tight">
+          <div class="font-bold tracking-wide text-[14px]">{{ settingsStore.businessName }}</div>
+          <div class="text-[10px] text-white/60">{{ settingsStore.business.slogan || 'NOUVO POS' }}</div>
+        </div>
       </div>
+
+      <!-- Center: Nav tabs -->
       <nav class="flex items-center gap-1 flex-1 justify-center">
         <button
           v-for="tab in navTabs"
@@ -15,6 +29,8 @@
           @click="navigate(tab)"
         >{{ tab.label }}</button>
       </nav>
+
+      <!-- Right: User + Logout -->
       <div class="flex items-center gap-3 shrink-0">
         <div class="text-right leading-tight">
           <div class="text-[12px] font-bold">{{ userName }}</div>
@@ -50,6 +66,7 @@
         <ReceiptTab v-else-if="activeTab === 'receipt'" />
         <PrinterTab v-else-if="activeTab === 'printer'" />
         <OrdersTab v-else-if="activeTab === 'orders'" />
+        <LicenseSection v-else-if="activeTab === 'license'" />
         <SystemTab v-else-if="activeTab === 'system'" />
       </main>
     </div>
@@ -57,20 +74,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useSettingsStore } from '@/stores/settings'
 import BusinessTab from './tabs/BusinessTab.vue'
 import ReceiptTab from './tabs/ReceiptTab.vue'
 import PrinterTab from './tabs/PrinterTab.vue'
 import OrdersTab from './tabs/OrdersTab.vue'
 import SystemTab from './tabs/SystemTab.vue'
+import LicenseSection from './sections/LicenseSection.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
+const settingsStore = useSettingsStore()
 
-type TabId = 'business' | 'receipt' | 'printer' | 'orders' | 'system'
-
+type TabId = 'business' | 'receipt' | 'printer' | 'orders' | 'license' | 'system'
 const activeTab = ref<TabId>('business')
 
 const tabs: Array<{ id: TabId; label: string; icon: string }> = [
@@ -78,25 +97,42 @@ const tabs: Array<{ id: TabId; label: string; icon: string }> = [
   { id: 'receipt', label: 'Receipt', icon: '🧾' },
   { id: 'printer', label: 'Printer', icon: '🖨️' },
   { id: 'orders', label: 'Orders', icon: '📋' },
+  { id: 'license', label: 'License', icon: '🔑' },
   { id: 'system', label: 'System', icon: '⚙️' }
 ]
 
-const userName = computed(() => auth.user?.username ?? 'User')
-const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
-const userRole = computed(() => {
-  const r = auth.user?.role ?? 'cashier'
-  return r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Cashier'
-})
-
 const navTabs = [
-  { path: '/home', label: 'Dashboard' },
-  { path: '/orders', label: 'Orders' },
-  { path: '/menu', label: 'Menu' },
-  { path: '/order-timer', label: 'Order Timer' },
-  { path: '/reports', label: 'Reports' },
-  { path: '/settings', label: 'Settings' }
+  { label: 'Home', path: '/home' },
+  { label: 'Menu', path: '/menu' },
+  { label: 'Orders', path: '/orders' },
+  { label: 'Reports', path: '/reports' },
+  { label: '⏱ Order Timer', path: '/order-timer' },
+  { label: 'Settings', path: '/settings' }
 ]
 
-function navigate(tab: any) { router.push(tab.path) }
-async function logout() { await auth.logout(); router.push('/login') }
+const userName = computed(() => auth.user?.username ?? 'User')
+const userRole = computed(() => auth.user?.role ?? 'Cashier')
+const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
+const businessInitial = computed(() => (settingsStore.businessName?.[0] ?? 'N').toUpperCase())
+
+function fileUrl(p: string): string {
+  if (!p) return ''
+  const normalized = String(p).replace(/\\/g, '/')
+  return `nouvo-file://${normalized}`
+}
+
+function navigate(tab: { path: string }) {
+  router.push(tab.path)
+}
+
+async function logout() {
+  await auth.logout()
+  router.push('/login')
+}
+
+onMounted(async () => {
+  try {
+    await (settingsStore as any).loadAll?.()
+  } catch {}
+})
 </script>

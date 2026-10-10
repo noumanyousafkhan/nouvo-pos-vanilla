@@ -1,24 +1,21 @@
 <template>
   <div class="h-screen flex flex-col bg-nouvo-cream overflow-hidden">
     <header class="h-16 bg-nouvo-green text-white flex items-center justify-between px-6 shrink-0">
-      <!-- Left: Business logo + name -->
       <div class="flex items-center gap-3 shrink-0">
         <img
-          v-if="settingsStore.business.logo_path"
-          :src="fileUrl(settingsStore.business.logo_path)"
+          v-if="store.business.logo_path"
+          :src="fileUrl(store.business.logo_path)"
           alt="Logo"
-          class="h-10 w-10 object-contain shrink-0"
+          class="h-10 w-10 object-contain shrink-0 rounded-full bg-white/10"
         />
         <div v-else class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold">
           {{ businessInitial }}
         </div>
         <div class="leading-tight">
-          <div class="font-bold tracking-wide text-[14px]">{{ settingsStore.businessName }}</div>
-          <div class="text-[10px] text-white/60">{{ settingsStore.business.slogan || 'NOUVO POS' }}</div>
+          <div class="font-bold tracking-wide text-[14px]">{{ store.businessName }}</div>
+          <div class="text-[10px] text-white/60">{{ store.business.slogan || 'NOUVO POS' }}</div>
         </div>
       </div>
-
-      <!-- Center: Nav tabs -->
       <nav class="flex items-center gap-1 flex-1 justify-center">
         <button
           v-for="tab in navTabs"
@@ -29,8 +26,6 @@
           @click="navigate(tab)"
         >{{ tab.label }}</button>
       </nav>
-
-      <!-- Right: User + Logout -->
       <div class="flex items-center gap-3 shrink-0">
         <div class="text-right leading-tight">
           <div class="text-[12px] font-bold">{{ userName }}</div>
@@ -166,7 +161,7 @@ import OrderDetailModal from './components/OrderDetailModal.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
-const settingsStore = useSettingsStore()
+const store = useSettingsStore()
 const store = useOrdersStore()
 
 const selectedOrder = ref<any>(null)
@@ -174,19 +169,18 @@ const currency = ref('Rs.')
 
 const userName = computed(() => auth.user?.username ?? 'User')
 const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
-const businessInitial = computed(() => (settingsStore.businessName?.[0] ?? 'N').toUpperCase())
 const userRole = computed(() => {
   const r = auth.user?.role ?? 'cashier'
   return r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Cashier'
 })
 
 const navTabs = [
-  { label: 'Home', path: '/home' },
-  { label: 'Menu', path: '/menu' },
-  { label: 'Orders', path: '/orders' },
-  { label: 'Reports', path: '/reports' },
-  { label: '⏱ Order Timer', path: '/order-timer' },
-  { label: 'Settings', path: '/settings' }
+  { path: '/home', label: 'Dashboard' },
+  { path: '/orders', label: 'Orders' },
+  { path: '/menu', label: 'Menu' },
+  { path: '/order-timer', label: 'Order Timer' },
+  { path: '/reports', label: 'Reports' },
+  { path: '/settings', label: 'Settings' }
 ]
 
 const filters = ref<any>({
@@ -202,12 +196,6 @@ const filters = ref<any>({
 
 const currentPage = computed(() => Math.floor(filters.value.offset / filters.value.limit) + 1)
 const totalPages = computed(() => Math.max(1, Math.ceil(store.total / filters.value.limit)))
-
-function fileUrl(p: string): string {
-  if (!p) return ''
-  const normalized = String(p).replace(/\\/g, '/')
-  return `nouvo-file://${normalized}`
-}
 
 function navigate(tab: any) { router.push(tab.path) }
 async function logout() { await auth.logout(); router.push('/login') }

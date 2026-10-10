@@ -1,16 +1,14 @@
 <template>
   <div class="splash-root">
     <div class="splash-content">
-      <div class="logo-placeholder">
-        <svg viewBox="0 0 100 100" class="logo-svg">
-          <circle cx="50" cy="50" r="42" fill="#1B4D3E" />
-          <text x="50" y="58" text-anchor="middle" font-size="22" font-weight="700" fill="#F5F1E8" font-family="Poppins, sans-serif">N</text>
-        </svg>
+      <div class="logo-wrap">
+        <NouvoLogo variant="full" :size="240" />
       </div>
 
-      <h1 class="product-name">NOUVO POS</h1>
-      <p class="product-sub">VANILLA</p>
-      <p class="welcome">Welcome to NOUVO POS</p>
+      <div class="brand-text">
+        <h1 class="product-name">NOUVO POS</h1>
+        <p class="product-sub">VANILLA</p>
+      </div>
 
       <div class="infinity-loader">
         <svg viewBox="0 0 100 40" class="infinity-svg">
@@ -33,14 +31,27 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import NouvoLogo from '@/components/brand/NouvoLogo.vue'
 
 const router = useRouter()
 
 onMounted(async () => {
   const start = Date.now()
-  const MIN_SPLASH = 1500
+  const MIN_SPLASH = 3000
 
   try {
+    const licRes = await (window as any).nouvo.invoke('license:validate')
+    const licenseValid = licRes?.ok && licRes.data?.status === 'valid'
+
+    if (!licenseValid) {
+      const elapsed = Date.now() - start
+      if (elapsed < MIN_SPLASH) {
+        await new Promise((r) => setTimeout(r, MIN_SPLASH - elapsed))
+      }
+      router.push('/activate')
+      return
+    }
+
     const hasUsersRes = await (window as any).nouvo.invoke('auth:hasAnyUser')
     const hasUsers = hasUsersRes?.ok && hasUsersRes.data === true
 
@@ -55,7 +66,8 @@ onMounted(async () => {
       router.push('/login')
     }
   } catch (err) {
-    router.push('/login')
+    console.error('Splash error:', err)
+    router.push('/activate')
   }
 })
 </script>
@@ -67,7 +79,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #F5F1E8 0%, #FFFFFF 100%);
+  background: #FFFFFF;
 }
 
 .splash-content {
@@ -75,18 +87,22 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
 }
 
-.logo-placeholder {
-  width: 96px;
-  height: 96px;
-  margin-bottom: 8px;
+.logo-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 0;
 }
 
-.logo-svg {
-  width: 100%;
-  height: 100%;
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 16px;
 }
 
 .product-name {
@@ -94,27 +110,22 @@ onMounted(async () => {
   font-weight: 700;
   color: #1B4D3E;
   margin: 0;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 .product-sub {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: #7BA88C;
   margin: 0;
-  letter-spacing: 4px;
-}
-
-.welcome {
-  font-size: 14px;
-  color: #8A8A8A;
-  margin-top: 16px;
+  letter-spacing: 5px;
 }
 
 .infinity-loader {
   width: 100px;
   height: 40px;
-  margin-top: 24px;
+  margin-top: 32px;
 }
 
 .infinity-svg {

@@ -36,6 +36,9 @@ const INVOKE_CHANNELS = [
   'reports:categoryPerformance', 'reports:paymentBreakdown',
   'reports:itemsPerformance', 'reports:recentTransactions',
   'reports:score', 'reports:fullDashboard',
+  // License
+  'license:getMachineId', 'license:getStatus', 'license:getCurrent',
+  'license:validate', 'license:activate', 'license:delete',
   // Backup
   'backup:list', 'backup:create', 'backup:delete', 'backup:validate',
   'backup:restore', 'backup:stats', 'backup:cleanup',

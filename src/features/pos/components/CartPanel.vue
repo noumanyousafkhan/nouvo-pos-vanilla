@@ -209,10 +209,21 @@ function clearCart() {
 }
 
 onMounted(async () => {
+  // Load receipt number
   const res = await (window as any).nouvo.invoke('orders:previewNextNumbers')
   if (res?.ok && res.data?.orderNumber) {
     const match = String(res.data.orderNumber).match(/(\d+)$/)
     if (match) receiptNumber.value = match[1]
+  }
+
+  // ⭐ Load default order type from settings
+  try {
+    const settingsRes = await (window as any).nouvo.invoke('settings:getOrder')
+    if (settingsRes?.ok && settingsRes.data?.default_order_type) {
+      cart.setOrderType(settingsRes.data.default_order_type)
+    }
+  } catch (err) {
+    console.error('Failed to load default order type:', err)
   }
 })
 </script>

@@ -1,5 +1,6 @@
-import { app, BrowserWindow, shell, screen } from 'electron'
-import { join } from 'path'
+import { app, BrowserWindow, shell, protocol, net } from 'electron'
+import { join, dirname } from 'path'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { registerIpcHandlers } from './ipc'
 import { initDatabase, closeDatabase } from './services/database/Database'
 import { runMigrations } from './services/database/Migrator'
@@ -7,8 +8,25 @@ import { cleanupExpiredSessions } from './services/auth/SessionService'
 import { logger } from './services/utils/logger'
 import { getAppPaths } from './services/utils/paths'
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
 let mainWindow: BrowserWindow | null = null
 const isDev = !app.isPackaged
+
+// ─── Register custom protocol for local files ───
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'nouvo-file',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true
+    }
+  }
+])
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -19,6 +37,7 @@ async function createWindow() {
     show: false,
     backgroundColor: '#F5F1E8',
     title: 'NOUVO POS VANILLA',
+    icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -27,24 +46,16 @@ async function createWindow() {
       webSecurity: true,
       allowRunningInsecureContent: false,
       zoomFactor: 1.0,
-      // Force repaint for cursor fixes
       enableBlinkFeatures: 'CSSVariables'
     }
   })
 
-  // ============================================
-  // CURSOR FIX FOR ELECTRON CHROMIUM
-  // ============================================
-
-  // Force 100% zoom (cursor hit-testing depends on this)
   mainWindow.webContents.setZoomFactor(1.0)
   mainWindow.webContents.setVisualZoomLevelLimits(1, 1)
   mainWindow.webContents.setZoomLevel(0)
 
-  // Force cursor refresh on window focus
   mainWindow.on('focus', () => {
     if (mainWindow) {
-      // Trigger a tiny repaint to clear cursor cache
       mainWindow.webContents.executeJavaScript(`
         (function() {
           document.body.style.transform = 'translateZ(0)';
@@ -54,11 +65,6 @@ async function createWindow() {
         })();
       `).catch(() => {})
     }
-  })
-
-  // Force cursor refresh on mouse enter
-  mainWindow.webContents.on('before-input-event', () => {
-    // no-op, just keeps webContents active
   })
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
@@ -76,7 +82,6 @@ async function createWindow() {
   }
 }
 
-// ⭐ Disable sandbox for AppImage compatibility
 app.commandLine.appendSwitch('no-sandbox')
 app.commandLine.appendSwitch('disable-gpu-sandbox')
 
@@ -84,6 +89,41 @@ app.whenReady().then(async () => {
   logger.info('App starting...')
   try {
     const paths = getAppPaths()
+
+    // ─── Custom protocol handler ───
+    protocol.handle('nouvo-file', (request) => {
+      try {
+        const url = new URL(request.url)
+
+        // nouvo-file://home/user/... → hostname='home', pathname='/user/...'
+        // nouvo-file:///home/user/... → hostname='', pathname='/home/user/...'
+        let filePath = url.hostname
+          ? '/' + url.hostname + url.pathname
+          : url.pathname
+
+        filePath = decodeURIComponent(filePath)
+
+        // Windows: /C:/Users/... → C:/Users/...
+        if (process.platform === 'win32' && /^\/[A-Z]:/i.test(filePath)) {
+          filePath = filePath.slice(1)
+        }
+
+        // Normalize slashes
+        const normalized = filePath.replace(/\/+/g, '/')
+        const allowedRoot = String(paths.dataRoot).replace(/\/+/g, '/')
+
+        if (!normalized.startsWith(allowedRoot)) {
+          logger.warn({ filePath, allowedRoot }, 'Blocked file access outside dataRoot')
+          return new Response('Forbidden', { status: 403 })
+        }
+
+        return net.fetch(pathToFileURL(filePath).toString())
+      } catch (err) {
+        logger.warn({ err }, 'nouvo-file protocol error')
+        return new Response('Not found', { status: 404 })
+      }
+    })
+
     logger.info({ dataRoot: paths.dataRoot }, 'App paths resolved')
 
     initDatabase(paths.databaseFile)
