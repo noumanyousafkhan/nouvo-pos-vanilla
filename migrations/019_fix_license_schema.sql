@@ -1,6 +1,3 @@
--- Fix license table schema to match LicenseService code
--- Drop old table and recreate with correct columns
-
 DROP TABLE IF EXISTS license;
 
 CREATE TABLE license (
