@@ -1,0 +1,103 @@
+appId: com.nouvo.pos.vanilla
+productName: NOUVO-POS-Vanilla
+copyright: Copyright © 2026 NOUVO
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+  - "!node_modules/**/{test,__tests__,tests,example,examples}/**"
+
+# ⭐ Migrations ko asar ke BAHAR rakhein
+extraResources:
+  - from: migrations
+    to: migrations
+    filter:
+      - "**/*.sql"
+
+asar: true
+afterPack: build/after-pack.cjs
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+  - "**/node_modules/@node-rs/**"
+  - "**/node_modules/node-machine-id/**"
+
+extraMetadata:
+  main: dist-electron/main/index.js
+
+# ═══════════════════════════════════════════════════════
+# WINDOWS
+# ═══════════════════════════════════════════════════════
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: "NOUVO POS Vanilla-Setup-${version}.${ext}"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NOUVO POS Vanilla
+  uninstallDisplayName: NOUVO POS Vanilla
+  deleteAppDataOnUninstall: false
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  license: build/license.txt
+  language: "1033"
+  runAfterFinish: true
+  menuCategory: false
+
+# ═══════════════════════════════════════════════════════
+# LINUX
+# ═══════════════════════════════════════════════════════
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: build/icon.png
+  category: Office
+  description: NOUVO POS Vanilla — Fast-Food Point of Sale
+  maintainer: NOUVO <support@nouvo.example>
+  vendor: NOUVO
+  synopsis: Point of Sale system
+  executableName: nouvo-pos-vanilla
+  artifactName: "NOUVO POS Vanilla-${version}.${ext}"
+  desktop:
+    Name: NOUVO POS Vanilla
+    Comment: Fast-Food Point of Sale
+    Categories: Office;
+    StartupWMClass: nouveau-pos-vanilla
+
+appImage:
+  artifactName: "NOUVO POS Vanilla-${version}.AppImage"
+
+deb:
+  artifactName: "nouvo-pos-vanilla_${version}_amd64.deb"
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+  afterInstall: build/deb-postinst.sh
