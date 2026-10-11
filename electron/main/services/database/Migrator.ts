@@ -123,7 +123,7 @@ export function runMigrations(): void {
     for (const m of pending) {
       logger.info({ version: m.version, name: m.name }, 'Applying migration')
       db.exec(m.sql)
-      db.prepare('INSERT INTO version (version, name) VALUES (?, ?)').run(m.version, m.name)
+      db.prepare('INSERT OR IGNORE INTO version (version, name) VALUES (?, ?)').run(m.version, m.name)
     }
   })
 
