@@ -314,12 +314,12 @@ const isDealsCategory = computed(() =>
 )
 
 const navTabs = [
-  { path: '/home', label: 'Dashboard' },
-  { path: '/orders', label: 'Orders' },
-  { path: '/menu', label: 'Menu' },
-  { path: '/order-timer', label: 'Order Timer' },
-  { path: '/reports', label: 'Reports' },
-  { path: '/settings', label: 'Settings' }
+  { label: 'Dashboard', path: '/home' },
+  { label: 'Menu', path: '/menu' },
+  { label: 'Orders', path: '/orders' },
+  { label: 'Reports', path: '/reports' },
+  { label: '⏱ Order Timer', path: '/order-timer' },
+  { label: 'Settings', path: '/settings' }
 ]
 
 function navigate(tab: any) { router.push(tab.path) }

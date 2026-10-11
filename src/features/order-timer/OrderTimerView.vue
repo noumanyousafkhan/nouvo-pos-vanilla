@@ -97,7 +97,7 @@ const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
 const businessInitial = computed(() => (settingsStore.businessName?.[0] ?? 'N').toUpperCase())
 
 const navTabs = [
-  { label: 'Home', path: '/home' },
+  { label: 'Dashboard', path: '/home' },
   { label: 'Menu', path: '/menu' },
   { label: 'Orders', path: '/orders' },
   { label: 'Reports', path: '/reports' },

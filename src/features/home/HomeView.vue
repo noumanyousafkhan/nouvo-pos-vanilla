@@ -61,7 +61,7 @@ const userRole = computed(() => auth.user?.role ?? 'Cashier')
 const userInitial = computed(() => (userName.value[0] ?? 'U').toUpperCase())
 
 const navTabs = [
-  { label: 'Home', path: '/home' },
+  { label: 'Dashboard', path: '/home' },
   { label: 'Menu', path: '/menu' },
   { label: 'Orders', path: '/orders' },
   { label: 'Reports', path: '/reports' },

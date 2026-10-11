@@ -181,7 +181,7 @@ const userRole = computed(() => {
 })
 
 const navTabs = [
-  { label: 'Home', path: '/home' },
+  { label: 'Dashboard', path: '/home' },
   { label: 'Menu', path: '/menu' },
   { label: 'Orders', path: '/orders' },
   { label: 'Reports', path: '/reports' },
