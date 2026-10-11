@@ -1,106 +1,163 @@
 <template>
-  <div class="h-screen bg-nouvo-cream flex flex-col overflow-hidden">
-    <header class="flex items-center justify-between px-8 pt-6 pb-4 shrink-0">
-      <div class="flex items-center gap-4">
+  <div class="min-h-screen bg-nouvo-cream">
+    <!-- Top bar -->
+    <header class="bg-white border-b border-nouvo-gray-border px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
         <button class="cursor-pointer w-10 h-10 rounded-full bg-white border border-nouvo-gray-border flex items-center justify-center hover:bg-nouvo-cream transition-colors" @click="goBack">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <h1 class="text-xl font-bold text-nouvo-green">Checkout</h1>
+        <h1 class="text-[20px] font-bold text-nouvo-ink">Checkout</h1>
       </div>
-
-      <div v-if="previewNumbers" class="text-[13px] text-nouvo-gray">
-        Order # <span class="font-mono font-semibold text-nouvo-ink">{{ previewNumbers.orderNumber }}</span>
+      <div class="text-[12px] text-nouvo-gray">
+        Order # <span class="font-mono font-semibold text-nouvo-ink">{{ previewNumbers?.orderNumber || '—' }}</span>
       </div>
     </header>
 
-    <div class="flex-1 grid grid-cols-[1fr_420px] gap-5 px-8 pb-6 overflow-hidden">
-      <div class="overflow-y-auto pr-1 min-h-0">
+    <!-- Main content -->
+    <div class="max-w-[1200px] mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6">
+      <!-- LEFT — Order Summary -->
+      <div class="space-y-4">
         <OrderSummaryPanel />
       </div>
 
-      <div class="bg-white rounded-3xl border-2 border-nouvo-green/30 flex flex-col p-5 overflow-hidden">
-        <h2 class="text-[16px] font-bold text-nouvo-green mb-4">Payment</h2>
+      <!-- RIGHT — Payment -->
+      <div class="bg-white rounded-2xl border border-nouvo-gray-border p-5 space-y-4">
+        <h2 class="text-[15px] font-bold text-nouvo-ink">Payment</h2>
 
-        <div class="grid grid-cols-2 gap-3 mb-5">
+        <!-- Payment method -->
+        <div class="grid grid-cols-2 gap-3">
           <button
             v-for="m in paymentMethods"
             :key="m.value"
-            class="cursor-pointer rounded-2xl border-2 p-4 flex flex-col items-center gap-1.5 transition-all"
-            :class="paymentMethod === m.value ? 'bg-nouvo-green text-white border-nouvo-green' : 'bg-white text-nouvo-ink border-nouvo-gray-border hover:border-nouvo-green'"
+            class="cursor-pointer py-4 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition-all"
+            :class="paymentMethod === m.value
+              ? 'border-nouvo-green bg-nouvo-green text-white'
+              : 'border-nouvo-gray-border bg-white text-nouvo-ink hover:border-nouvo-green'"
             @click="paymentMethod = m.value"
           >
-            <span class="text-2xl">{{ m.icon }}</span>
-            <span class="text-[13px] font-semibold">{{ m.label }}</span>
+            <span class="text-[22px]">{{ m.icon }}</span>
+            <span class="text-[12px] font-bold">{{ m.label }}</span>
           </button>
         </div>
 
-        <div class="border-t-2 border-nouvo-green/20 border-b-2 border-b-nouvo-green/20 py-4 mb-5">
-          <div class="flex justify-between items-center py-1.5 text-[13px]">
+        <!-- Totals -->
+        <div class="pt-4 border-t border-nouvo-gray-border/60 space-y-1.5">
+          <div class="flex justify-between text-[12px]">
             <span class="text-nouvo-gray">Subtotal</span>
-            <span class="font-semibold text-nouvo-ink">{{ store.currency }} {{ cart.subtotal.toFixed(1) }}</span>
+            <span class="font-semibold text-nouvo-ink">{{ cart.currency }} {{ cart.subtotal.toFixed(1) }}</span>
           </div>
-          <div v-if="cart.discountValue > 0" class="flex justify-between items-center py-1.5 text-[13px]">
+          <div v-if="(cart.discount ?? 0) > 0" class="flex justify-between text-[12px]">
             <span class="text-nouvo-gray">Discount</span>
-            <span class="font-semibold text-nouvo-red">− {{ store.currency }} {{ cart.discountValue.toFixed(1) }}</span>
+            <span class="font-semibold text-nouvo-red">− {{ cart.currency }} {{ (cart.discount ?? 0).toFixed(1) }}</span>
           </div>
-          <div v-if="cart.taxAmount > 0" class="flex justify-between items-center py-1.5 text-[13px]">
-            <span class="text-nouvo-gray">{{ store.business.tax_label }}</span>
-            <span class="font-semibold text-nouvo-ink">{{ store.currency }} {{ cart.taxAmount.toFixed(1) }}</span>
+          <div v-if="cart.taxAmount > 0" class="flex justify-between text-[12px]">
+            <span class="text-nouvo-gray">Tax</span>
+            <span class="font-semibold text-nouvo-ink">{{ cart.currency }} {{ cart.taxAmount.toFixed(1) }}</span>
           </div>
-          <div v-if="cart.deliveryValue > 0" class="flex justify-between items-center py-1.5 text-[13px]">
+          <div v-if="(cart.deliveryCharge ?? 0) > 0" class="flex justify-between text-[12px]">
             <span class="text-nouvo-gray">Delivery</span>
-            <span class="font-semibold text-nouvo-ink">{{ store.currency }} {{ cart.deliveryValue.toFixed(1) }}</span>
+            <span class="font-semibold text-nouvo-ink">{{ cart.currency }} {{ (cart.deliveryCharge ?? 0).toFixed(1) }}</span>
           </div>
-          <div class="flex justify-between items-center pt-3 mt-1 border-t-2 border-nouvo-green">
-            <span class="text-[15px] font-bold text-nouvo-green">TOTAL</span>
-            <span class="text-[18px] font-bold text-nouvo-green">{{ store.currency }} {{ cart.total.toFixed(1) }}</span>
+          <div class="flex justify-between pt-2 border-t border-nouvo-gray-border/60">
+            <span class="text-[15px] font-bold text-nouvo-ink">TOTAL</span>
+            <span class="text-[20px] font-bold text-nouvo-green">{{ cart.currency }} {{ cart.total.toFixed(1) }}</span>
           </div>
         </div>
 
-        <div v-if="paymentMethod === 'cash'" class="flex-1 flex flex-col">
-          <label class="block text-[12px] font-semibold text-nouvo-gray uppercase tracking-wider mb-2">Amount Received</label>
-          <input v-model.number="amountReceived" type="number" min="0" step="0.01" placeholder="0.0" class="w-full px-4 py-3.5 border-2 border-nouvo-green/30 rounded-2xl text-[22px] font-bold text-nouvo-green outline-none focus:border-nouvo-green transition-colors" @keydown.enter="placeOrder" />
-
-          <div class="grid grid-cols-4 gap-2 mt-3">
+        <!-- Cash amount -->
+        <div v-if="paymentMethod === 'cash'" class="space-y-2">
+          <label class="text-[11px] font-semibold text-nouvo-gray uppercase tracking-wide">Amount Received</label>
+          <input
+            v-model.number="amountReceived"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="0.0"
+            class="w-full px-4 py-3.5 border-2 border-nouvo-green/30 rounded-2xl text-[22px] font-bold text-nouvo-green outline-none focus:border-nouvo-green transition-colors"
+            @keydown.enter="placeOrder"
+          />
+          <div class="grid grid-cols-4 gap-2">
             <button class="cursor-pointer py-2.5 bg-nouvo-cream rounded-xl text-[11px] font-semibold text-nouvo-green hover:bg-nouvo-green hover:text-white transition-colors" @click="amountReceived = Math.round(cart.total * 10) / 10">Exact</button>
             <button class="cursor-pointer py-2.5 bg-nouvo-cream rounded-xl text-[11px] font-semibold text-nouvo-green hover:bg-nouvo-green hover:text-white transition-colors" @click="amountReceived = Math.ceil(cart.total / 100) * 100">Round 100</button>
             <button class="cursor-pointer py-2.5 bg-nouvo-cream rounded-xl text-[11px] font-semibold text-nouvo-green hover:bg-nouvo-green hover:text-white transition-colors" @click="amountReceived = Math.ceil(cart.total / 500) * 500">Round 500</button>
             <button class="cursor-pointer py-2.5 bg-nouvo-cream rounded-xl text-[11px] font-semibold text-nouvo-green hover:bg-nouvo-green hover:text-white transition-colors" @click="amountReceived = Math.ceil(cart.total / 1000) * 1000">Round 1000</button>
           </div>
-
-          <div class="flex justify-between items-center mt-4 px-4 py-3.5 rounded-2xl font-semibold" :class="change < 0 ? 'bg-red-50 text-nouvo-red' : 'bg-nouvo-green/10 text-nouvo-green'">
-            <span>Change</span>
-            <span class="text-[18px] font-bold">{{ store.currency }} {{ change.toFixed(1) }}</span>
+          <div class="flex justify-between items-center py-3 px-4 bg-nouvo-cream rounded-2xl">
+            <span class="text-[13px] font-semibold text-nouvo-gray">Change</span>
+            <span class="text-[18px] font-bold text-nouvo-green">{{ cart.currency }} {{ changeAmount.toFixed(1) }}</span>
           </div>
         </div>
 
-        <div v-else class="flex-1 flex items-center justify-center text-nouvo-gray text-[13px]">
-          Card payment — no amount needed
+        <!-- Error -->
+        <div v-if="error" class="text-[12px] text-nouvo-red bg-nouvo-red/10 px-3 py-2 rounded-xl">
+          {{ error }}
         </div>
 
-        <p v-if="error" class="mt-3 text-[12px] text-nouvo-red bg-red-50 px-3 py-2 rounded-lg">{{ error }}</p>
-
-        <button :disabled="!canPlaceOrder || checkout.submitting" class="cursor-pointer mt-4 bg-nouvo-green text-white border-none rounded-full h-[52px] px-6 text-[14px] font-bold transition-all hover:bg-nouvo-green-dark disabled:bg-gray-300 disabled:cursor-not-allowed" @click="placeOrder">
+        <!-- Confirm -->
+        <button
+          :disabled="!canPlaceOrder || checkout.submitting"
+          class="cursor-pointer w-full h-[52px] bg-nouvo-green text-white border-none rounded-full text-[14px] font-bold transition-all hover:bg-nouvo-green-dark disabled:bg-gray-300 disabled:cursor-not-allowed"
+          @click="placeOrder"
+        >
           {{ checkout.submitting ? 'Placing Order...' : 'Confirm Order' }}
         </button>
       </div>
     </div>
 
-    <CheckoutSuccessModal
-      v-if="checkout.lastOrder"
-      :order="checkout.lastOrder"
-      @close="onSuccessClose"
-      @new-order="onNewOrder"
-      @reprint="onReprint"
-    />
+    <!-- Success modal -->
+    <div v-if="showSuccess && lastOrder" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-3xl p-8 max-w-md w-full text-center">
+        <div class="w-16 h-16 mx-auto rounded-full bg-nouvo-green flex items-center justify-center mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h2 class="text-[22px] font-bold text-nouvo-ink mb-1">Order Placed!</h2>
+        <p class="text-[12px] text-nouvo-gray mb-5">Order has been successfully recorded</p>
 
+        <div class="bg-nouvo-cream rounded-2xl p-4 space-y-2 text-left mb-5">
+          <div class="flex justify-between text-[12px]">
+            <span class="text-nouvo-gray">Order #</span>
+            <span class="font-mono font-bold text-nouvo-ink">{{ lastOrder.order_number }}</span>
+          </div>
+          <div class="flex justify-between text-[12px]">
+            <span class="text-nouvo-gray">Invoice #</span>
+            <span class="font-mono font-bold text-nouvo-ink">{{ lastOrder.invoice_number }}</span>
+          </div>
+          <div class="flex justify-between text-[12px] border-t border-nouvo-gray-border/60 pt-2">
+            <span class="text-nouvo-gray">Total</span>
+            <span class="font-bold text-nouvo-ink">{{ lastOrder.total.toFixed(1) }}</span>
+          </div>
+          <div class="flex justify-between text-[12px]">
+            <span class="text-nouvo-gray">Change</span>
+            <span class="font-bold text-nouvo-ink">{{ (lastOrder.change || 0).toFixed(1) }}</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <button class="cursor-pointer py-3 rounded-full border border-nouvo-gray-border text-[12px] font-semibold hover:bg-nouvo-cream" @click="onReprint('customer')">
+            🧾 Customer
+          </button>
+          <button class="cursor-pointer py-3 rounded-full border border-nouvo-gray-border text-[12px] font-semibold hover:bg-nouvo-cream" @click="onReprint('kitchen')">
+            👨‍🍳 Kitchen
+          </button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button class="cursor-pointer py-3 rounded-full bg-nouvo-cream text-[12px] font-semibold hover:bg-nouvo-gray-border" @click="closeSuccess">
+            Close
+          </button>
+          <button class="cursor-pointer py-3 rounded-full bg-nouvo-green text-white text-[12px] font-bold hover:bg-nouvo-green-dark" @click="onNewOrder">
+            New Order
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receipt preview -->
     <ReceiptPreviewModal
       v-if="previewText"
       :text="previewText"
+      :lines="previewLines"
       :type="previewType"
-      @close="previewText = null"
+      @close="closePreview"
       @print="onPrintNow"
     />
   </div>
@@ -111,57 +168,83 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { useCheckoutStore } from '@/stores/checkout'
-import { useSettingsStore } from '@/stores/settings'
-import { invokeSafe } from '@/utils/ipc'
 import OrderSummaryPanel from './components/OrderSummaryPanel.vue'
-import CheckoutSuccessModal from './components/CheckoutSuccessModal.vue'
 import ReceiptPreviewModal from './components/ReceiptPreviewModal.vue'
+
+const invokeSafe = async <T = any>(channel: string, payload?: any): Promise<{ ok: boolean; data?: T; error?: any }> => {
+  try {
+    const res = await (window as any).nouvo.invoke(channel, payload)
+    return res
+  } catch (err: any) {
+    return { ok: false, error: { message: err?.message || 'IPC failed' } }
+  }
+}
 
 const router = useRouter()
 const cart = useCartStore()
 const checkout = useCheckoutStore()
-const store = useSettingsStore()
 
 const paymentMethod = ref<'cash' | 'card'>('cash')
 const amountReceived = ref<number>(0)
 const error = ref('')
-const previewNumbers = ref<any>(null)
-
-const previewText = ref<string | null>(null)
-const previewType = ref<'customer' | 'kitchen'>('customer')
+const showSuccess = ref(false)
+const lastOrder = ref<any>(null)
 const lastOrderId = ref<number | null>(null)
+const previewText = ref<string | null>(null)
+const previewLines = ref<any[] | null>(null)
+const previewType = ref<'customer' | 'kitchen'>('customer')
+const previewNumbers = ref<any>(null)
 
 const paymentMethods: Array<{ value: 'cash' | 'card'; label: string; icon: string }> = [
   { value: 'cash', label: 'Cash', icon: '💵' },
   { value: 'card', label: 'Card', icon: '💳' }
 ]
 
-const change = computed(() => {
+const changeAmount = computed(() => {
   if (paymentMethod.value !== 'cash') return 0
-  return amountReceived.value - cart.total
+  const diff = Number(amountReceived.value || 0) - cart.total
+  return diff > 0 ? diff : 0
 })
 
 const canPlaceOrder = computed(() => {
   if (cart.isEmpty) return false
-  if (paymentMethod.value === 'cash') return amountReceived.value >= cart.total
+  if (paymentMethod.value === 'cash' && amountReceived.value < cart.total) return false
   return true
 })
 
-function generateIdempotencyKey(): string {
-  return `ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-}
+function goBack() { router.push('/pos') }
 
 async function loadPreview() {
   const res = await invokeSafe<any>('orders:previewNextNumbers')
   if (res.ok) previewNumbers.value = res.data
 }
 
-function goBack() { router.push('/pos') }
+function generateIdempotencyKey(): string {
+  return `ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+}
 
 async function placeOrder() {
   if (!canPlaceOrder.value || checkout.submitting) return
   error.value = ''
   const payload = cart.exportForCheckout()
+
+  // Delivery validation
+  if (payload.orderType === 'delivery') {
+    const digits = (payload.customerPhone || '').replace(/[^0-9]/g, '')
+    if (!payload.customerName?.trim()) {
+      error.value = 'Customer name required for delivery'
+      return
+    }
+    if (digits.length < 12) {
+      error.value = 'Valid phone number required (min 12 digits)'
+      return
+    }
+    if (!payload.customerAddress?.trim()) {
+      error.value = 'Delivery address required'
+      return
+    }
+  }
+
   const orderData = {
     orderType: String(payload.orderType || 'takeaway'),
     customerName: String(payload.customerName || ''),
@@ -182,10 +265,30 @@ async function placeOrder() {
   const cleanPayload = JSON.parse(JSON.stringify(orderData))
   try {
     const res = await checkout.createOrder(cleanPayload)
-    if (res?.order?.id) lastOrderId.value = res.order.id
+    if (res?.order?.id) {
+      lastOrderId.value = res.order.id
+      lastOrder.value = res.order
+      showSuccess.value = true
+    }
   } catch (err: any) {
     error.value = err.message || 'Order failed'
   }
+}
+
+function closeSuccess() {
+  showSuccess.value = false
+  error.value = ''
+}
+
+function onNewOrder() {
+  showSuccess.value = false
+  lastOrder.value = null
+  lastOrderId.value = null
+  cart.clearCart()
+  checkout.reset()
+  amountReceived.value = 0
+  error.value = ''
+  router.push('/pos')
 }
 
 async function onReprint(type: string) {
@@ -198,6 +301,7 @@ async function onReprint(type: string) {
   })
   if (res.ok && (res.data as any)?.preview) {
     previewText.value = (res.data as any).preview
+    previewLines.value = (res.data as any).lines || null
     previewType.value = type === 'kitchen' ? 'kitchen' : 'customer'
   } else {
     alert('Preview failed: ' + ((res as any).error?.message || 'Unknown'))
@@ -212,26 +316,15 @@ async function onPrintNow() {
     copies: 1,
     isReprint: true
   })
+}
+
+function closePreview() {
   previewText.value = null
-}
-
-function onSuccessClose() {
-  cart.clearCart()
-  checkout.reset()
-  lastOrderId.value = null
-  router.push('/pos')
-}
-
-function onNewOrder() {
-  cart.clearCart()
-  checkout.reset()
-  lastOrderId.value = null
-  router.push('/pos')
+  previewLines.value = null
 }
 
 onMounted(async () => {
-  if (cart.isEmpty) { router.push('/pos'); return }
-  amountReceived.value = cart.total
+  amountReceived.value = Math.round(cart.total * 10) / 10
   await loadPreview()
 })
 </script>

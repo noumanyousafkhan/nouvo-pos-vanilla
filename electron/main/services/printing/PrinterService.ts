@@ -1,97 +1,127 @@
+import { logger } from '../utils/logger'
 import { SettingsService } from '../settings/SettingsService'
 import { OrderService } from '../orders/OrderService'
-import { AuditService } from '../audit/AuditService'
 import { ReceiptFormatter } from './ReceiptFormatter'
-import { logger } from '../utils/logger'
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-let ThermalPrinter: any = null
-let PrinterTypes: any = null
-try {
-  const mod = require('node-thermal-printer')
-  ThermalPrinter = mod.printer
-  PrinterTypes = mod.types || mod.PrinterTypes
-} catch {
-  logger.warn('node-thermal-printer not installed — using preview mode only')
+// node-thermal-printer is CommonJS
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { printer: ThermalPrinter, PrinterTypes, CharacterSet } = require('node-thermal-printer')
+
+export interface PrintConfig {
+  enabled: boolean
+  interface: string
+  type: 'epson' | 'star'
+  width_mm: number
+  char_width: number
+  cut_enabled: boolean
+  beep_enabled: boolean
+  open_drawer: boolean
 }
 
 export class PrinterService {
-  static getConfig() {
+  // ═══════════════════════════════════════════════════════
+  // CONFIG — auto-derive interface from connection + name
+  // ═══════════════════════════════════════════════════════
+  private static getConfig(): PrintConfig {
+    const r = SettingsService.getReceipt()
+    const name = String(SettingsService.get('printer.name') ?? '').trim()
+    const connection = String(SettingsService.get('printer.connection') ?? 'usb').trim()
+    const address = String(SettingsService.get('printer.address') ?? '').trim()
+    const port = Number(SettingsService.get('printer.port') ?? 9100)
+
+    // Auto-derive interface based on connection type
+    let iface = 'printer:default'
+    if (connection === 'network' && address) {
+      iface = `tcp://${address}:${port}`
+    } else if (connection === 'usb' && name) {
+      iface = `printer:${name}`
+    } else if (connection === 'serial' && address) {
+      iface = address
+    }
+
+    // Allow explicit override via printer.interface setting
+    const explicit = SettingsService.get('printer.interface')
+    if (explicit && String(explicit).trim()) {
+      iface = String(explicit).trim()
+    }
+
     return {
-      name: SettingsService.get('printer.name') ?? '',
-      type: SettingsService.get('printer.type') ?? 'thermal',
-      connection: SettingsService.get('printer.connection') ?? 'usb',
-      address: SettingsService.get('printer.address') ?? '',
-      port: SettingsService.getNumber('printer.port', 9100),
-      width_mm: SettingsService.getNumber('printer.width_mm', 80),
+      enabled: SettingsService.getBoolean('printer.enabled', false),
+      interface: iface,
+      type: (SettingsService.get('printer.type') as 'epson' | 'star') ?? 'epson',
+      width_mm: Number(r.width_mm ?? 80),
+      char_width: Number(r.char_width ?? 42),
       cut_enabled: SettingsService.getBoolean('printer.cut_enabled', true),
       beep_enabled: SettingsService.getBoolean('printer.beep_enabled', false),
       open_drawer: SettingsService.getBoolean('printer.open_drawer', false)
     }
   }
 
-  private static buildInterface(config: any): string | null {
-    if (config.connection === 'network' && config.address) {
-      return `tcp://${config.address}:${config.port}`
-    }
-    if (config.connection === 'serial' && config.address) {
-      return `serial:${config.address}`
-    }
-    if (config.connection === 'usb' && config.name) {
-      return `printer:${config.name}`
-    }
-    return null
-  }
-
-  private static createPrinter(config: any): any | null {
-    if (!ThermalPrinter) return null
-    const iface = this.buildInterface(config)
-    if (!iface) return null
+  private static createPrinter(config: PrintConfig): any | null {
+    if (!config.enabled) return null
     try {
-      return new ThermalPrinter({
-        type: PrinterTypes?.EPSON || 'epson',
-        interface: iface,
-        width: config.width_mm === 58 ? 32 : 42,
-        characterSet: 'PC437',
+      const printer = new ThermalPrinter({
+        type: config.type === 'star' ? PrinterTypes.STAR : PrinterTypes.EPSON,
+        interface: config.interface,
+        characterSet: CharacterSet.PC437_USA,
         removeSpecialCharacters: false,
-        lineCharacter: '-'
+        lineCharacter: '-',
+        width: config.char_width
       })
+      return printer
     } catch (err) {
-      logger.error({ err, iface }, 'Failed to create ThermalPrinter')
+      logger.error({ err, config }, 'Failed to create printer instance')
       return null
     }
   }
 
-  private static applyLines(printer: any, lines: any[]): void {
+  // ═══════════════════════════════════════════════════════
+  // APPLY LINES → PRINTER (async for image support)
+  // ═══════════════════════════════════════════════════════
+  private static async applyLines(printer: any, lines: any[]): Promise<void> {
     for (const line of lines) {
       switch (line.type) {
         case 'text': {
-          if (line.align === 'center') printer.alignCenter()
-          else if (line.align === 'right') printer.alignRight()
-          else printer.alignLeft()
-
-          if (line.bold) printer.bold(true)
-          if (line.size === 'large') printer.setTextSize(1, 1)
-          else if (line.size === 'small') printer.setTextSize(0, 0)
-
-          printer.println(String(line.text ?? ''))
-
-          printer.bold(false)
-          printer.setTextSize(0, 0)
-          printer.alignLeft()
+          const text = String(line.text || '')
+          if (line.align === 'center') {
+            if (line.bold && line.size === 'large') {
+              printer.alignCenter()
+              printer.bold(true)
+              printer.setTextSize(1, 1)
+              printer.println(text)
+              printer.setTextNormal()
+              printer.bold(false)
+            } else if (line.bold) {
+              printer.alignCenter()
+              printer.bold(true)
+              printer.println(text)
+              printer.bold(false)
+            } else {
+              printer.alignCenter()
+              printer.println(text)
+            }
+          } else if (line.align === 'right') {
+            printer.alignRight()
+            printer.println(text)
+          } else {
+            printer.alignLeft()
+            if (line.bold) {
+              printer.bold(true)
+              printer.println(text)
+              printer.bold(false)
+            } else {
+              printer.println(text)
+            }
+          }
           break
         }
         case 'columns': {
-          printer.alignLeft()
+          const left = String(line.left || '')
+          const right = String(line.right || '')
           if (line.bold) printer.bold(true)
-          if (line.size === 'large') printer.setTextSize(1, 1)
-          const left = String(line.left ?? '')
-          const right = String(line.right ?? '')
-          const width = 42
-          const spaces = Math.max(1, width - left.length - right.length)
-          printer.println(left + ' '.repeat(spaces) + right)
-          printer.bold(false)
-          printer.setTextSize(0, 0)
+          printer.alignLeft()
+          printer.leftRight(left, right)
+          if (line.bold) printer.bold(false)
           break
         }
         case 'divider':
@@ -102,18 +132,32 @@ export class PrinterService {
           for (let i = 0; i < n; i++) printer.newLine()
           break
         }
-        case 'image':
+        case 'image': {
+          const imgPath = String(line.path || '').trim()
+          if (imgPath) {
+            try {
+              if (typeof printer.printImage === 'function') {
+                printer.alignCenter()
+                await printer.printImage(imgPath)
+              } else {
+                logger.warn({ imgPath }, 'printer.printImage not available — skipping image')
+              }
+            } catch (err) {
+              logger.warn({ err, imgPath }, 'Image print failed — continuing')
+            }
+          }
           break
+        }
       }
     }
   }
 
-  /**
-   * Preview only — generate text, no printing.
-   */
+  // ═══════════════════════════════════════════════════════
+  // PREVIEW — returns text + structured lines
+  // ═══════════════════════════════════════════════════════
   static async previewReceipt(
     params: { orderId: number; type: 'customer' | 'kitchen' }
-  ): Promise<{ ok: boolean; error?: string; preview?: string }> {
+  ): Promise<{ ok: boolean; error?: string; preview?: string; lines?: any[] }> {
     try {
       const { order, items, payment } = OrderService.getFullOrder(params.orderId)
       const business = SettingsService.getBusiness()
@@ -123,20 +167,20 @@ export class PrinterService {
         ? ReceiptFormatter.formatKitchen(data)
         : ReceiptFormatter.formatCustomer(data)
       const preview = this.formatPreview(lines)
-      return { ok: true, preview }
+      return { ok: true, preview, lines }
     } catch (err: any) {
       logger.error({ err, orderId: params.orderId }, 'Preview failed')
       return { ok: false, error: err?.message || 'Preview failed' }
     }
   }
 
-  /**
-   * Actual print — sends to printer if available.
-   */
+  // ═══════════════════════════════════════════════════════
+  // PRINT RECEIPT
+  // ═══════════════════════════════════════════════════════
   static async printReceipt(
     params: { orderId: number; type: 'customer' | 'kitchen'; copies?: number; isReprint?: boolean },
     userId?: number
-  ): Promise<{ ok: boolean; error?: string; copies: number; preview?: string; printed?: boolean }> {
+  ): Promise<{ ok: boolean; error?: string; copies: number; preview?: string; lines?: any[]; printed?: boolean }> {
     const copies = params.copies ?? (params.type === 'kitchen'
       ? SettingsService.getNumber('receipt.copies_kitchen', 1)
       : SettingsService.getNumber('receipt.copies_customer', 1))
@@ -158,7 +202,7 @@ export class PrinterService {
       if (printer) {
         try {
           for (let c = 0; c < copies; c++) {
-            this.applyLines(printer, lines)
+            await this.applyLines(printer, lines)
             if (config.cut_enabled) printer.cut()
           }
           if (config.beep_enabled) printer.beep()
@@ -170,22 +214,19 @@ export class PrinterService {
           logger.error({ printErr, config }, 'Printer execution failed — preview only')
         }
       } else {
-        logger.info({ orderId: params.orderId, type: params.type }, 'Printer not configured — preview mode')
+        logger.warn('Printer not enabled — preview only')
       }
 
-      AuditService.log(
-        params.isReprint ? 'order.reprinted' : 'order.printed',
-        { orderId: params.orderId, type: params.type, copies, printed },
-        userId
-      )
-
-      return { ok: true, copies, preview, printed }
+      return { ok: true, copies, preview, lines, printed }
     } catch (err: any) {
-      logger.error({ err, orderId: params.orderId, type: params.type }, 'Print failed')
-      return { ok: false, error: err?.message || 'Print failed', copies: 0 }
+      logger.error({ err, orderId: params.orderId }, 'Print failed')
+      return { ok: false, error: err?.message || 'Print failed', copies }
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // FORMAT PREVIEW — text representation
+  // ═══════════════════════════════════════════════════════
   private static formatPreview(lines: any[]): string {
     const output: string[] = []
     const WIDTH = 42
@@ -214,6 +255,9 @@ export class PrinterService {
     return output.join('\n')
   }
 
+  // ═══════════════════════════════════════════════════════
+  // TEST PRINT
+  // ═══════════════════════════════════════════════════════
   static async testPrint(): Promise<{ ok: boolean; error?: string; preview?: string; printed?: boolean }> {
     try {
       const business = SettingsService.getBusiness()
@@ -235,13 +279,16 @@ export class PrinterService {
       let printed = false
       if (printer) {
         try {
-          this.applyLines(printer, lines)
+          await this.applyLines(printer, lines)
           if (config.cut_enabled) printer.cut()
           await printer.execute()
           printed = true
         } catch (printErr: any) {
           logger.error({ printErr }, 'Test print execution failed')
+          return { ok: false, error: printErr?.message || 'Test print failed', preview, printed: false }
         }
+      } else {
+        return { ok: false, error: 'Printer not enabled or invalid interface', preview, printed: false }
       }
       return { ok: true, preview, printed }
     } catch (err: any) {
@@ -250,15 +297,19 @@ export class PrinterService {
     }
   }
 
-  static async isAvailable(): Promise<boolean> {
+  // ═══════════════════════════════════════════════════════
+  // IS AVAILABLE
+  // ═══════════════════════════════════════════════════════
+  static async isAvailable(): Promise<{ ok: boolean; available: boolean; interface?: string; error?: string }> {
     try {
       const config = this.getConfig()
-      if (!config.name && config.connection !== 'network' && config.connection !== 'serial') return false
-      const printer = this.createPrinter(config)
-      if (!printer) return false
-      return await printer.isPrinterConnected()
-    } catch {
-      return false
+      if (!config.enabled) {
+        return { ok: true, available: false, error: 'Printer disabled in settings' }
+      }
+      return { ok: true, available: true, interface: config.interface }
+    } catch (err: any) {
+      logger.error({ err }, 'Printer availability check failed')
+      return { ok: false, available: false, error: err?.message || 'Check failed' }
     }
   }
 }
