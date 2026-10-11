@@ -1,9 +1,9 @@
 {
   "name": "nouvo-pos-vanilla",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "NOUVO POS VANILLA — Reusable Fast-Food POS",
   "main": "dist-electron/main/index.js",
-  "author": "NOUVO <support@nouvo.example>",
+  "author": "NOUVO <havenirnomi@gmail.com",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
