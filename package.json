@@ -1,6 +1,6 @@
 {
   "name": "nouvo-pos-vanilla",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "NOUVO POS VANILLA — Reusable Fast-Food POS",
   "main": "dist-electron/main/index.js",
   "author": "NOUVO <havenirnomi@gmail.com",
@@ -20,6 +20,7 @@
     "@node-rs/argon2": "^2.2.2",
     "better-sqlite3": "^11.3.0",
     "electron-log": "^5.2.0",
+    "electron-updater": "^6.8.9",
     "node-machine-id": "^1.1.12",
     "node-thermal-printer": "^4.6.1",
     "pino": "^9.4.0",
