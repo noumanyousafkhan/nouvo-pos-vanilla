@@ -42,3 +42,9 @@ release/
 *.exe
 *.AppImage
 *.deb
+installer-native/
+release/
+*.exe
+*.AppImage
+*.deb
+*.blockmap
