@@ -1,17 +1,25 @@
 import { getDatabase } from '../database/Database'
 import { AuditService } from '../audit/AuditService'
-import { DealSchema, DealUpdateSchema, FullDealSchema } from './schemas'
-import { NotFoundError, AppError } from '../utils/errors'
+import { AppError, NotFoundError } from '../utils/errors'
+import { FullDealSchema } from './schemas'
 
 export interface Deal {
   id: number
   name: string
   price: number
-  image_path: string
+  image_path: string | null
   is_active: number
   valid_from: string | null
   valid_to: string | null
   created_at: string
+}
+
+export interface DealItem {
+  id: number
+  deal_id: number
+  product_id: number
+  variant_id: number | null
+  quantity: number
 }
 
 export interface CartDealLine {
@@ -29,9 +37,17 @@ export interface CartDealLine {
 }
 
 export class DealService {
+  // ═══════════════════════════════════════════════════════
+  // LIST
+  // ═══════════════════════════════════════════════════════
   static list(includeInactive = false, onlyValid = true): Deal[] {
     const db = getDatabase()
-    let sql = 'SELECT d.*, (SELECT COUNT(*) FROM deal_items WHERE deal_id = d.id) as items_count FROM deals d'
+    let sql = `
+      SELECT d.*,
+        (SELECT COUNT(*) FROM deal_items WHERE deal_id = d.id) as items_count,
+        (SELECT COALESCE(SUM(quantity), 0) FROM deal_items WHERE deal_id = d.id) as total_quantity
+      FROM deals d
+    `
     const conditions: string[] = []
     const params: any[] = []
 
@@ -74,9 +90,9 @@ export class DealService {
     return true
   }
 
-  /**
-   * Calculate the normal total price of a deal (without deal discount).
-   */
+  // ═══════════════════════════════════════════════════════
+  // CALCULATE NORMAL TOTAL (used for allocation only)
+  // ═══════════════════════════════════════════════════════
   static calculateNormalTotal(
     items: Array<{ product_id: number; variant_id?: number | null; quantity: number }>
   ): number {
@@ -96,14 +112,11 @@ export class DealService {
 
       if (item.variant_id) {
         const variant = db.prepare(
-          'SELECT id, price_adjust FROM product_variants WHERE id = ? AND product_id = ?'
-        ).get(item.variant_id, item.product_id) as { id: number; price_adjust: number } | undefined
-
-        if (!variant) {
-          throw new AppError('VARIANT_NOT_FOUND', `Variant ${item.variant_id} not found for product ${item.product_id}`)
+          'SELECT price_adjust FROM product_variants WHERE id = ?'
+        ).get(item.variant_id) as { price_adjust: number } | undefined
+        if (variant) {
+          unitPrice += Number(variant.price_adjust) || 0
         }
-
-        unitPrice += Number(variant.price_adjust) || 0
       }
 
       total += unitPrice * (Number(item.quantity) || 1)
@@ -112,193 +125,176 @@ export class DealService {
     return Math.round(total * 100) / 100
   }
 
-  /**
-   * Validate deal price against normal total.
-   */
-  static validateDealPrice(
-    dealPrice: number,
-    items: Array<{ product_id: number; variant_id?: number | null; quantity: number }>
-  ): void {
-    const normalTotal = this.calculateNormalTotal(items)
-    if (dealPrice > normalTotal) {
-      throw new AppError(
-        'DEAL_PRICE_EXCEEDS_NORMAL',
-        `Deal price (Rs. ${dealPrice.toFixed(2)}) cannot exceed normal total (Rs. ${normalTotal.toFixed(2)})`
-      )
-    }
-  }
-
-  static create(data: unknown, userId?: number) {
-    const parsed = DealSchema.parse(data)
+  // ═══════════════════════════════════════════════════════
+  // CREATE
+  // ═══════════════════════════════════════════════════════
+  static create(data: unknown, userId?: number): Deal {
+    const parsed = FullDealSchema.parse(data)
     const db = getDatabase()
 
-    for (const item of parsed.items) {
-      const product = db.prepare(
-        'SELECT id FROM products WHERE id = ? AND is_deleted = 0'
-      ).get(item.product_id)
-      if (!product) throw new AppError('PRODUCT_NOT_FOUND', `Product ${item.product_id} not found`)
-    }
-
-    // 🔒 BACKEND VALIDATION
-    this.validateDealPrice(Number(parsed.price), parsed.items)
-
     const tx = db.transaction(() => {
-      const result = db.prepare(`
+      const dealResult = db.prepare(`
         INSERT INTO deals (name, price, image_path, is_active, valid_from, valid_to)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(
         parsed.name,
         parsed.price,
-        parsed.image_path,
+        parsed.image_path || null,
         parsed.is_active ? 1 : 0,
-        parsed.valid_from ?? null,
-        parsed.valid_to ?? null
+        parsed.valid_from || null,
+        parsed.valid_to || null
       )
 
-      const dealId = Number(result.lastInsertRowid)
+      const dealId = Number(dealResult.lastInsertRowid)
 
       for (const item of parsed.items) {
-        db.prepare(`
-          INSERT INTO deal_items (deal_id, product_id, variant_id, quantity)
-          VALUES (?, ?, ?, ?)
-        `).run(dealId, item.product_id, item.variant_id ?? null, item.quantity)
+        db.prepare(
+          'INSERT INTO deal_items (deal_id, product_id, variant_id, quantity) VALUES (?, ?, ?, ?)'
+        ).run(dealId, item.product_id, item.variant_id ?? null, item.quantity)
       }
 
       return dealId
     })
 
     const dealId = tx()
-    AuditService.log('deal.created', { id: dealId, name: parsed.name }, userId)
-    return this.getFull(dealId)
+
+    AuditService.log('deal.created', {
+      dealId,
+      name: parsed.name,
+      price: parsed.price
+    }, userId)
+
+    return this.get(dealId)
   }
 
-  static update(id: number, data: unknown, userId?: number) {
-    const parsed = DealUpdateSchema.parse(data)
-    const db = getDatabase()
-
-    this.get(id)
-    const fields: string[] = []
-    const values: any[] = []
-
-    if (parsed.price !== undefined) {
-      const existingItems = this.getItems(id) as Array<{
-        product_id: number
-        variant_id: number | null
-        quantity: number
-      }>
-      this.validateDealPrice(Number(parsed.price), existingItems)
-    }
-
-    for (const [k, v] of Object.entries(parsed)) {
-      fields.push(`${k} = ?`)
-      values.push(typeof v === 'boolean' ? (v ? 1 : 0) : v)
-    }
-
-    if (fields.length > 0) {
-      values.push(id)
-      db.prepare(`UPDATE deals SET ${fields.join(', ')} WHERE id = ?`).run(...values)
-    }
-
-    AuditService.log('deal.updated', { id, changes: parsed }, userId)
-    return this.getFull(id)
-  }
-
-  /**
-   * Full update — deal meta + items in a single transaction.
-   * Validates deal price against the NEW items (not old ones).
-   */
-  static updateFull(id: number, data: unknown, userId?: number) {
+  // ═══════════════════════════════════════════════════════
+  // UPDATE
+  // ═══════════════════════════════════════════════════════
+  static update(id: number, data: unknown, userId?: number): Deal {
     const parsed = FullDealSchema.parse(data)
     const db = getDatabase()
 
-    this.get(id) // ensure exists
-
-    for (const item of parsed.items) {
-      const product = db.prepare(
-        'SELECT id FROM products WHERE id = ? AND is_deleted = 0'
-      ).get(item.product_id)
-      if (!product) throw new AppError('PRODUCT_NOT_FOUND', `Product ${item.product_id} not found`)
-    }
-
-    // 🔒 BACKEND VALIDATION — against NEW items
-    this.validateDealPrice(Number(parsed.price), parsed.items)
+    const existing = this.get(id)
 
     const tx = db.transaction(() => {
       db.prepare(`
-        UPDATE deals SET
-          name = ?,
-          price = ?,
-          image_path = ?,
-          is_active = ?,
-          valid_from = ?,
-          valid_to = ?
+        UPDATE deals
+        SET name = ?, price = ?, image_path = ?, is_active = ?, valid_from = ?, valid_to = ?
         WHERE id = ?
       `).run(
         parsed.name,
         parsed.price,
-        parsed.image_path || '',
+        parsed.image_path || null,
         parsed.is_active ? 1 : 0,
-        parsed.valid_from ?? null,
-        parsed.valid_to ?? null,
+        parsed.valid_from || null,
+        parsed.valid_to || null,
         id
       )
 
       db.prepare('DELETE FROM deal_items WHERE deal_id = ?').run(id)
+
       for (const item of parsed.items) {
-        db.prepare(`
-          INSERT INTO deal_items (deal_id, product_id, variant_id, quantity)
-          VALUES (?, ?, ?, ?)
-        `).run(id, item.product_id, item.variant_id ?? null, item.quantity)
+        db.prepare(
+          'INSERT INTO deal_items (deal_id, product_id, variant_id, quantity) VALUES (?, ?, ?, ?)'
+        ).run(id, item.product_id, item.variant_id ?? null, item.quantity)
       }
     })
+
     tx()
 
     AuditService.log('deal.updated', {
-      id,
-      changes: { name: parsed.name, price: parsed.price },
-      itemsCount: parsed.items.length
+      dealId: id,
+      name: parsed.name,
+      oldName: existing.name,
+      price: parsed.price
     }, userId)
 
-    return this.getFull(id)
-  }
-
-  static replaceItems(dealId: number, items: unknown[], userId?: number) {
-    const db = getDatabase()
-    const deal = this.get(dealId)
-
-    const validated = items.map((i) => DealSchema.shape.items.element.parse(i))
-    this.validateDealPrice(Number(deal.price), validated)
-
-    const tx = db.transaction(() => {
-      db.prepare('DELETE FROM deal_items WHERE deal_id = ?').run(dealId)
-      for (const item of validated) {
-        db.prepare(`
-          INSERT INTO deal_items (deal_id, product_id, variant_id, quantity)
-          VALUES (?, ?, ?, ?)
-        `).run(dealId, item.product_id, item.variant_id ?? null, item.quantity)
-      }
-    })
-    tx()
-
-    AuditService.log('deal.items_replaced', { dealId, count: validated.length }, userId)
-    return this.getFull(dealId)
-  }
-
-  static delete(id: number, userId?: number): void {
-    const db = getDatabase()
-    const deal = this.get(id)
-    db.prepare('DELETE FROM deals WHERE id = ?').run(id)
-    AuditService.log('deal.deleted', { id, name: deal.name }, userId)
-  }
-
-  static toggleActive(id: number, userId?: number): Deal {
-    const db = getDatabase()
-    const deal = this.get(id)
-    db.prepare('UPDATE deals SET is_active = ? WHERE id = ?').run(deal.is_active ? 0 : 1, id)
-    AuditService.log('deal.toggled', { id, active: !deal.is_active }, userId)
     return this.get(id)
   }
 
+  // ═══════════════════════════════════════════════════════
+  // UPDATE FULL (alias for update)
+  // ═══════════════════════════════════════════════════════
+  static updateFull(id: number, data: unknown, userId?: number): Deal {
+    return this.update(id, data, userId)
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // REPLACE ITEMS (deal ke items replace karo)
+  // ═══════════════════════════════════════════════════════
+  static replaceItems(
+    id: number,
+    items: Array<{ product_id: number; variant_id?: number | null; quantity: number }>,
+    userId?: number
+  ): Deal {
+    const db = getDatabase()
+    const deal = this.get(id)
+
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM deal_items WHERE deal_id = ?').run(id)
+
+      for (const item of items) {
+        db.prepare(
+          'INSERT INTO deal_items (deal_id, product_id, variant_id, quantity) VALUES (?, ?, ?, ?)'
+        ).run(id, item.product_id, item.variant_id ?? null, item.quantity)
+      }
+    })
+
+    tx()
+
+    AuditService.log('deal.items_replaced', {
+      dealId: id,
+      name: deal.name,
+      itemCount: items.length
+    }, userId)
+
+    return this.get(id)
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // TOGGLE ACTIVE (is_active flip karo)
+  // ═══════════════════════════════════════════════════════
+  static toggleActive(id: number, userId?: number): Deal {
+    const db = getDatabase()
+    const deal = this.get(id)
+    const newActive = deal.is_active ? 0 : 1
+
+    db.prepare('UPDATE deals SET is_active = ? WHERE id = ?').run(newActive, id)
+
+    AuditService.log('deal.toggled', {
+      dealId: id,
+      name: deal.name,
+      isActive: newActive === 1
+    }, userId)
+
+    return this.get(id)
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // TOGGLE (alias for toggleActive — backward compat)
+  // ═══════════════════════════════════════════════════════
+  static toggle(id: number, userId?: number): Deal {
+    return this.toggleActive(id, userId)
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // DELETE
+  // ═══════════════════════════════════════════════════════
+  static delete(id: number, userId?: number): void {
+    const db = getDatabase()
+    const deal = this.get(id)
+
+    db.prepare('DELETE FROM deals WHERE id = ?').run(id)
+
+    AuditService.log('deal.deleted', {
+      dealId: id,
+      name: deal.name
+    }, userId)
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // EXPAND TO CART
+  // ═══════════════════════════════════════════════════════
   static expandToCart(dealId: number): CartDealLine[] {
     const db = getDatabase()
     const { deal, items } = this.getFull(dealId)

@@ -25,7 +25,6 @@ export interface OrderRecord {
   change: number
   status: string
   created_at: string
-  completed_at: string | null
 }
 
 export class OrderService {
@@ -73,7 +72,7 @@ export class OrderService {
           customer_name, customer_phone, customer_address, table_number,
           subtotal, discount, delivery_charge, tax, total,
           payment_method, amount_received, change, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
       `).run(
         orderNumber, invoiceNumber, parsed.orderType,
         parsed.customerName, parsed.customerPhone, parsed.customerAddress, parsed.tableNumber,
@@ -145,8 +144,8 @@ export class OrderService {
     const orderSettings = SettingsService.getOrder()
 
     if (parsed.orderType === 'delivery' && orderSettings.require_customer_for_delivery) {
-      if (!parsed.customerPhone || !parsed.customerAddress) {
-        throw new AppError('VALIDATION', 'Delivery requires phone and address')
+      if (!parsed.customerName || !parsed.customerPhone || !parsed.customerAddress) {
+        throw new AppError('VALIDATION', 'Delivery requires customer name, phone, and address')
       }
     }
 
@@ -189,7 +188,9 @@ export class OrderService {
             cleanNotes = ''
           }
         }
-      } catch {}
+      } catch {
+        // Not JSON — keep notes as-is
+      }
 
       return {
         ...item,
@@ -239,7 +240,7 @@ export class OrderService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // LIST ORDERS EXTENDED (with filters + stats)
+  // LIST ORDERS EXTENDED (history with filters + stats)
   // ═══════════════════════════════════════════════════════
   static listOrdersExtended(filters: unknown) {
     const db = getDatabase()
@@ -248,10 +249,14 @@ export class OrderService {
     const conditions: string[] = []
     const params: any[] = []
 
+    // Status filter
     if (f.status === 'voided') {
       conditions.push("status = 'voided'")
+    } else if (f.status === 'pending') {
+      conditions.push("status = 'pending'")
     } else if (!f.includeVoided) {
-      conditions.push("status != 'voided'")
+      // Default: only completed orders (completed_at set)
+      conditions.push("status = 'completed' AND completed_at IS NOT NULL")
     }
 
     const range = this.resolveRange(f)
@@ -421,23 +426,15 @@ export class OrderService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // ORDER TIMER — LIST ACTIVE ORDERS
+  // LIST ACTIVE ORDERS (for Order Timer)
   // ═══════════════════════════════════════════════════════
   static listActiveOrders() {
     const db = getDatabase()
-
     const rows = db.prepare(`
       SELECT
-        o.id,
-        o.order_number,
-        o.invoice_number,
-        o.order_type,
-        o.customer_name,
-        o.customer_phone,
-        o.customer_address,
-        o.table_number,
-        o.status,
-        o.total,
+        o.id, o.order_number, o.invoice_number, o.order_type,
+        o.customer_name, o.customer_phone, o.table_number,
+        o.subtotal, o.total,
         o.created_at,
         o.completed_at
       FROM orders o
@@ -490,7 +487,7 @@ export class OrderService {
   }
 
   // ═══════════════════════════════════════════════════════
-  // ORDER TIMER — MARK COMPLETED
+  // MARK COMPLETED (Order Timer se)
   // ═══════════════════════════════════════════════════════
   static markCompleted(orderId: number, userId?: number) {
     const db = getDatabase()
@@ -503,15 +500,14 @@ export class OrderService {
 
     db.prepare(`
       UPDATE orders
-      SET completed_at = ?
+      SET completed_at = ?, status = 'completed'
       WHERE id = ?
     `).run(now, orderId)
 
     AuditService.log('order.completed', {
       orderId,
       orderNumber: order.order_number,
-      completedAt: now,
-      createdAt: order.created_at
+      total: order.total
     }, userId)
 
     return this.getFullOrder(orderId)

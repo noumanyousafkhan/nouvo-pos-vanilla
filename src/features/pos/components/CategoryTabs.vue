@@ -28,6 +28,7 @@
           alt=""
         />
         <div v-else class="icon" v-html="getIcon(cat.name, index, cat.id === activeId)"></div>
+      </div>
     </div>
   </div>
 </template>
@@ -181,7 +182,6 @@ watch(
   width: 100%;
 }
 
-/* 7+ categories → horizontal scroll */
 .category-bar.scrollable {
   overflow-x: auto;
   overflow-y: hidden;
@@ -207,11 +207,6 @@ watch(
   height: 0 !important;
 }
 
-/*
-  FIXED width = exactly 6 cards fit on screen.
-  flex-shrink: 0 → card never squeezes.
-  7th card overflows → scroll.
-*/
 .category-bar.scrollable .category-card {
   flex: 0 0 calc((100% - 60px) / 6);
   min-width: calc((100% - 60px) / 6);
@@ -219,7 +214,6 @@ watch(
   width: calc((100% - 60px) / 6);
 }
 
-/* Base card */
 .category-card {
   position: relative;
   flex: 1 1 0;

@@ -84,7 +84,7 @@
           <div v-else-if="filteredProducts.length === 0" class="text-center text-nouvo-gray p-10 text-sm">
             No products found
           </div>
-          <ProductGrid v-else :products="filteredProducts" @add="onProductAdd" />
+          <ProductGrid v-else :products="filteredProducts" :category-name="activeCategoryName" @add="onProductAdd" />
         </div>
       </div>
 
@@ -226,7 +226,27 @@ async function loadAll() {
 function selectCategory(id: number) { activeCategoryId.value = id }
 function onSearch(q: string) { searchQuery.value = q }
 
-function onProductAdd(product: any) {
+async function onProductAdd(product: any) {
+  // Fetch full product with variants/modifiers — source of truth
+  const res = await invokeSafe<any>('menu:products:getFull', product.id)
+  if (res.ok && res.data) {
+    const full = res.data as any
+    const variants = Array.isArray(full.variants) ? full.variants : []
+    const modifiers = Array.isArray(full.modifiers) ? full.modifiers : []
+    const hasVariants = variants.length > 0
+    const hasModifiers = modifiers.length > 0
+
+    if (hasVariants || hasModifiers) {
+      // Flatten: spread product fields + attach variants/modifiers
+      customizingProduct.value = {
+        ...(full.product ?? product),
+        variants,
+        modifiers
+      }
+      return
+    }
+  }
+  // Fallback to basic flags if IPC fails
   if (product.has_variants || product.has_modifiers) {
     customizingProduct.value = product
     return
@@ -264,7 +284,6 @@ function onCheckout() {
 function fileUrl(p: string): string {
   if (!p) return ''
   const normalized = p.replace(/\\/g, '/')
-  // using nouvo-file protocol
   return `nouvo-file:///${normalized}`
 }
 

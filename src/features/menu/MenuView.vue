@@ -60,9 +60,10 @@
         <h2 class="text-xs font-bold text-nouvo-gray uppercase tracking-wider mb-3">Categories</h2>
         <ul class="space-y-1">
           <li v-for="cat in menu.categories" :key="cat.id"
-            class="group cursor-pointer flex items-center gap-1 px-3 py-2.5 rounded-lg transition-colors"
+            class="group cursor-pointer flex items-center gap-2 px-3 py-2.5 rounded-lg transition-colors"
             :class="[selectedCategoryId === cat.id ? 'bg-nouvo-green text-white' : 'hover:bg-nouvo-cream text-nouvo-ink', !cat.is_active ? 'opacity-50' : '']"
             @click="selectCategory(cat.id)">
+            <span class="w-5 h-5 flex items-center justify-center shrink-0" v-html="getCategoryIcon(cat.name, selectedCategoryId === cat.id)"></span>
             <span class="flex-1 text-sm font-medium truncate">{{ cat.name }}</span>
             <span class="text-xs opacity-70 group-hover:hidden">{{ getCategoryCount(cat) }}</span>
             <div class="hidden group-hover:flex items-center gap-0.5">
@@ -118,7 +119,7 @@
                 <div class="flex items-start gap-3">
                   <div class="w-16 h-16 rounded-lg bg-nouvo-cream flex items-center justify-center overflow-hidden shrink-0">
                     <img v-if="deal.image_path" :src="fileUrl(deal.image_path)" class="max-w-full max-h-full object-contain" loading="lazy" />
-                    <span v-else class="text-2xl">🍔</span>
+                    <span v-else class="text-2xl">⭐</span>
                   </div>
                   <div class="flex-1 min-w-0">
                     <h3 class="font-bold text-sm text-nouvo-ink truncate">{{ deal.name }}</h3>
@@ -146,6 +147,11 @@
                   @click.stop="toggleProduct(product)"
                 >{{ product.is_active ? '👁️' : '🚫' }}</button>
                 <button
+                  class="w-7 h-7 rounded bg-white border border-nouvo-gray-border hover:bg-nouvo-cream flex items-center justify-center text-[12px]"
+                  title="Duplicate"
+                  @click.stop="openProductModal(undefined, product)"
+                >📋</button>
+                <button
                   class="w-7 h-7 rounded bg-white border border-nouvo-gray-border hover:bg-red-50 flex items-center justify-center text-[12px]"
                   title="Delete"
                   @click.stop="deleteProduct(product)"
@@ -155,7 +161,7 @@
                 <div class="flex items-start gap-3">
                   <div class="w-16 h-16 rounded-lg bg-nouvo-cream flex items-center justify-center overflow-hidden shrink-0">
                     <img v-if="product.image_path" :src="fileUrl(product.image_path)" class="max-w-full max-h-full object-contain" loading="lazy" />
-                    <span v-else class="text-2xl">🍕</span>
+                    <span v-else class="text-2xl">{{ getProductEmoji(product.name) }}</span>
                   </div>
                   <div class="flex-1 min-w-0">
                     <h3 class="font-bold text-sm text-nouvo-ink truncate">{{ product.name }}</h3>
@@ -411,6 +417,89 @@ async function deleteDeal(deal: any) {
   } else {
     alert('Delete failed: ' + ((res as any).error?.message || 'Unknown'))
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   PRODUCT EMOJI MAPPER
+   ═══════════════════════════════════════════════════════ */
+const PRODUCT_EMOJI: Array<[RegExp, string]> = [
+  [/pizza/i, '🍕'],
+  [/burger|zinger|sandwich/i, '🍔'],
+  [/wrap|shawarma|roll/i, '🌯'],
+  [/fries|chips|nugget|wing/i, '🍟'],
+  [/cola|coke|pepsi|sprite|7up|fanta|mirinda|dew|soda|drink|water|juice|shake|smoothie|lime/i, '🥤'],
+  [/coffee|espresso|latte|cappuccino|macchiato|americano|mocha/i, '☕'],
+  [/tea|chai|jasmine|earl|chamomile/i, '🍵'],
+  [/salad/i, '🥗'],
+  [/cake|brownie|dessert|muffin|macaroon/i, '🍰'],
+  [/ice.?cream/i, '🍦'],
+  [/bread|toast/i, '🍞']
+]
+
+function getProductEmoji(name: string): string {
+  const n = String(name || '').trim()
+  for (const [re, emoji] of PRODUCT_EMOJI) {
+    if (re.test(n)) return emoji
+  }
+  return '🍽'
+}
+
+function getCategoryIcon(catName: string, isActive: boolean = false): string {
+  const name = String(catName || '').trim().toLowerCase()
+  const color = isActive ? '#FFFFFF' : '#025726'
+
+  if (name === 'pizza') {
+    return `<svg width="20" height="20" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M40 12 L68 62 Q40 74 12 62 Z" fill="${color}"/>
+      <circle cx="34" cy="42" r="2.5" fill="#F5F1E8"/>
+      <circle cx="46" cy="46" r="2.5" fill="#F5F1E8"/>
+      <circle cx="40" cy="56" r="2.5" fill="#F5F1E8"/>
+    </svg>`
+  }
+  if (name === 'burgers' || name === 'burger') {
+    return `<svg width="20" height="20" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14 32 Q14 14 40 14 Q66 14 66 32 Z" fill="${color}"/>
+      <rect x="12" y="34" width="56" height="6" rx="2" fill="${color}"/>
+      <rect x="12" y="42" width="56" height="6" rx="2" fill="${color}"/>
+      <path d="M14 50 Q14 66 40 66 Q66 66 66 50 Z" fill="${color}"/>
+    </svg>`
+  }
+  if (name === 'shawarma') {
+    return `<svg width="20" height="20" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 40 Q40 12 64 40 L60 60 Q40 52 20 60 Z" fill="${color}"/>
+      <path d="M16 40 Q40 30 64 40" stroke="#F5F1E8" stroke-width="2" fill="none"/>
+    </svg>`
+  }
+  if (name === 'wraps') {
+    return `<svg width="20" height="20" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="40" cy="40" rx="22" ry="28" fill="${color}"/>
+      <path d="M26 26 Q40 20 54 26" stroke="#F5F1E8" stroke-width="2" fill="none"/>
+      <path d="M26 34 Q40 28 54 34" stroke="#F5F1E8" stroke-width="2" fill="none"/>
+    </svg>`
+  }
+  if (name === 'sides') {
+    return `<svg width="20" height="20" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M22 34 L26 68 Q27 72 32 72 L48 72 Q53 72 54 68 L58 34 Z" fill="${color}"/>
+      <rect x="20" y="30" width="40" height="6" rx="2" fill="${color}"/>
+      <rect x="28" y="14" width="5" height="18" rx="1.5" fill="${color}"/>
+      <rect x="37" y="10" width="5" height="22" rx="1.5" fill="${color}"/>
+    </svg>`
+  }
+  if (name === 'drinks') {
+    return `<svg width="20" height="20" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M22 26 L26 66 Q27 70 32 70 L48 70 Q53 70 54 66 L58 26 Z" fill="${color}"/>
+      <ellipse cx="40" cy="26" rx="18" ry="4" fill="${color}"/>
+      <rect x="42" y="6" width="3" height="20" rx="1.5" fill="${color}" transform="rotate(15 43 16)"/>
+    </svg>`
+  }
+  if (name === 'deals') {
+    return `<svg width="20" height="20" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M40 8 C41.5 8, 42.8 9, 43.3 10.4 L48.4 25 L63.7 25.1 C65.2 25.1, 66.4 26.3, 66.4 27.8 C66.4 28.5, 66.1 29.2, 65.6 29.7 L53.3 38.9 L57.7 53.9 C58.2 55.6, 57.3 57.4, 55.6 57.9 C54.9 58.1, 54.2 58.1, 53.6 57.8 L40 48.3 L26.4 57.8 C25 58.7, 23.1 58.3, 22.2 56.9 C21.9 56.3, 21.8 55.6, 22 55 L26.4 39.9 L14.1 29.7 C12.8 28.6, 12.7 26.7, 13.8 25.4 C14.4 24.8, 15.1 24.4, 15.9 24.4 L31.6 24.4 L36.7 10.4 C37.2 9, 38.5 8, 40 8 Z" fill="${color}"/>
+    </svg>`
+  }
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2">
+    <circle cx="12" cy="12" r="10"/>
+  </svg>`
 }
 
 function fileUrl(p: string): string {

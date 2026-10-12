@@ -277,7 +277,13 @@ async function placeOrder() {
 
 function closeSuccess() {
   showSuccess.value = false
+  lastOrder.value = null
+  lastOrderId.value = null
+  cart.clearCart()
+  checkout.reset()
+  amountReceived.value = 0
   error.value = ''
+  router.push('/pos')
 }
 
 function onNewOrder() {

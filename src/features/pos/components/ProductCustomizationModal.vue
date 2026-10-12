@@ -162,19 +162,33 @@ function toggleOption(mod: any, opt: any) {
 }
 
 async function loadDetails() {
-  const v = await (window as any).nouvo.invoke('menu:variants:listByProduct', props.product.id)
-  if (v?.ok) {
-    variants.value = v.data
-    const def = v.data.find((x: any) => x.is_default)
+  if (Array.isArray(props.product.variants) && props.product.variants.length > 0) {
+    variants.value = props.product.variants
+    const def = variants.value.find((x: any) => x.is_default)
     if (def) selectedVariantId.value = def.id
+  } else {
+    const v = await (window as any).nouvo.invoke('menu:variants:listByProduct', props.product.id)
+    if (v?.ok) {
+      variants.value = v.data
+      const def = v.data.find((x: any) => x.is_default)
+      if (def) selectedVariantId.value = def.id
+    }
   }
 
-  const m = await (window as any).nouvo.invoke('menu:modifiers:listByProduct', props.product.id)
-  if (m?.ok) {
-    modifiers.value = m.data
-    for (const mod of m.data) {
+  if (Array.isArray(props.product.modifiers) && props.product.modifiers.length > 0) {
+    modifiers.value = props.product.modifiers
+    for (const mod of modifiers.value) {
       const defs = mod.options.filter((o: any) => o.is_default).map((o: any) => o.id)
       if (defs.length > 0) selectedOptions.value[mod.id] = defs
+    }
+  } else {
+    const m = await (window as any).nouvo.invoke('menu:modifiers:listByProduct', props.product.id)
+    if (m?.ok) {
+      modifiers.value = m.data
+      for (const mod of m.data) {
+        const defs = mod.options.filter((o: any) => o.is_default).map((o: any) => o.id)
+        if (defs.length > 0) selectedOptions.value[mod.id] = defs
+      }
     }
   }
 }

@@ -42,21 +42,39 @@
           </div>
 
           <p class="text-[11px] text-nouvo-gray mb-3">
-            Size (variant) fix karein — flavour/modifiers customer POS pe select karega.
+            Type to search products. Fix the size (variant) here. Customer will select flavour/modifiers at POS.
           </p>
 
           <div class="space-y-2">
             <div v-for="(item, i) in form.items" :key="i" class="flex items-center gap-2">
-              <select
-                v-model.number="item.product_id"
-                class="flex-1 px-3 py-2 border border-nouvo-gray-border rounded-lg text-sm outline-none focus:border-nouvo-green bg-white"
-                @change="onProductChange(item)"
-              >
-                <option :value="null">-- Select Product --</option>
-                <option v-for="p in dealAvailableProducts" :key="p.id" :value="p.id">
-                  {{ p.name }}
-                </option>
-              </select>
+              <div class="flex-1 relative" @click.stop>
+                <input
+                  type="text"
+                  v-model="productSearch[i]"
+                  placeholder="Search product..."
+                  class="w-full px-3 py-2 border border-nouvo-gray-border rounded-lg text-sm outline-none focus:border-nouvo-green bg-white"
+                  @focus="openDropdown(i)"
+                  @input="onSearchInput(i)"
+                  @keydown.esc="dropdownOpen[i] = false"
+                />
+                <div
+                  v-if="dropdownOpen[i]"
+                  class="absolute left-0 right-0 bottom-full mb-1 bg-white border border-nouvo-gray-border rounded-lg shadow-lg max-h-52 overflow-y-auto z-50"
+                >
+                  <div
+                    v-for="p in filteredProductsFor(i)"
+                    :key="p.id"
+                    class="px-3 py-2 text-sm cursor-pointer hover:bg-nouvo-cream"
+                    :class="{ 'bg-nouvo-cream font-semibold': item.product_id === p.id }"
+                    @click="selectProduct(i, p)"
+                  >
+                    {{ p.name }}
+                  </div>
+                  <div v-if="filteredProductsFor(i).length === 0" class="px-3 py-2 text-sm text-nouvo-gray text-center">
+                    No products found
+                  </div>
+                </div>
+              </div>
 
               <select
                 v-if="item.product_id && getVariants(item.product_id).length > 0"
@@ -83,24 +101,6 @@
               >✕</button>
             </div>
           </div>
-
-          <div v-if="form.items.length > 0 && form.items.every((i: any) => i.product_id)" class="mt-4 p-3 bg-nouvo-cream rounded-lg text-sm space-y-1">
-            <div class="flex justify-between">
-              <span class="text-nouvo-gray">Normal Total:</span>
-              <span class="font-semibold text-nouvo-ink">Rs. {{ normalTotal.toFixed(2) }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-nouvo-gray">Deal Price:</span>
-              <span class="font-semibold text-nouvo-ink">Rs. {{ Number(form.price).toFixed(2) }}</span>
-            </div>
-            <div v-if="Number(form.price) < normalTotal" class="flex justify-between">
-              <span class="text-nouvo-green font-semibold">Customer saves:</span>
-              <span class="font-bold text-nouvo-green">Rs. {{ (normalTotal - Number(form.price)).toFixed(2) }}</span>
-            </div>
-            <div v-else-if="Number(form.price) > normalTotal" class="text-nouvo-red font-semibold text-xs">
-              ⚠ Deal price is higher than normal total!
-            </div>
-          </div>
         </section>
 
         <p v-if="error" class="text-[12px] text-nouvo-red bg-red-50 px-3 py-2 rounded-lg">{{ error }}</p>
@@ -117,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { invokeSafe } from '@/utils/ipc'
 
 const props = defineProps<{
@@ -132,6 +132,9 @@ const productVariants = ref<Record<number, any[]>>({})
 const saving = ref(false)
 const error = ref('')
 
+const productSearch = ref<Record<number, string>>({})
+const dropdownOpen = ref<Record<number, boolean>>({})
+
 const form = ref({
   name: '',
   price: 0,
@@ -143,26 +146,23 @@ const form = ref({
 })
 
 const dealAvailableProducts = computed(() => {
-  return allProducts.value.filter((p: any) => {
-    const cat = allCategories.value.find((c: any) => c.id === p.category_id)
-    const catName = String(cat?.name || '').trim().toLowerCase()
-    if (catName === 'pizza') {
-      return String(p.name).trim().toLowerCase() === 'pizza'
-    }
-    return true
-  })
-})
+  const pizzaCat = allCategories.value.find((c: any) =>
+    String(c.name || '').trim().toLowerCase() === 'pizza'
+  )
+  const pizzaCatId = pizzaCat?.id
 
-const normalTotal = computed(() => {
-  return form.value.items.reduce((sum, item) => {
-    let price = Number(item.unitPrice) || 0
-    if (item.variant_id) {
-      const variants = productVariants.value[item.product_id] || []
-      const v = variants.find((x: any) => x.id === item.variant_id)
-      if (v) price += Number(v.price_adjust) || 0
-    }
-    return sum + price * (Number(item.quantity) || 1)
-  }, 0)
+  return allProducts.value
+    .filter((p: any) => {
+      if (pizzaCatId && p.category_id === pizzaCatId) {
+        return p.is_deal_only === 1
+      }
+      return true
+    })
+    .sort((a: any, b: any) => {
+      if (a.is_deal_only === 1 && b.is_deal_only !== 1) return -1
+      if (a.is_deal_only !== 1 && b.is_deal_only === 1) return 1
+      return String(a.name).localeCompare(String(b.name))
+    })
 })
 
 async function loadCategories() {
@@ -171,7 +171,6 @@ async function loadCategories() {
 }
 
 async function loadProducts() {
-  // includeInactive=true, includeDealOnly=true → so "Pizza" base product is included
   const res = await invokeSafe<any>('menu:products:list', null, true, true)
   if (res.ok) {
     allProducts.value = res.data || []
@@ -186,10 +185,47 @@ function getVariants(productId: number): any[] {
   return productVariants.value[productId] || []
 }
 
-function onProductChange(item: any) {
+function openDropdown(idx: number) {
+  for (const key in dropdownOpen.value) {
+    if (Number(key) !== idx) dropdownOpen.value[Number(key)] = false
+  }
+  dropdownOpen.value[idx] = true
+  const item = form.value.items[idx]
+  if (item?.product_id) {
+    const p = allProducts.value.find((x: any) => x.id === item.product_id)
+    if (p) productSearch.value[idx] = p.name
+  }
+}
+
+function onSearchInput(idx: number) {
+  dropdownOpen.value[idx] = true
+}
+
+function filteredProductsFor(idx: number): any[] {
+  const q = String(productSearch.value[idx] || '').trim().toLowerCase()
+  if (!q) return dealAvailableProducts.value
+
+  const item = form.value.items[idx]
+  if (item?.product_id) {
+    const selected = allProducts.value.find((x: any) => x.id === item.product_id)
+    if (selected && selected.name.toLowerCase() === q) {
+      return dealAvailableProducts.value
+    }
+  }
+
+  return dealAvailableProducts.value.filter((p: any) =>
+    String(p.name).toLowerCase().includes(q)
+  )
+}
+
+function selectProduct(idx: number, p: any) {
+  const item = form.value.items[idx]
+  if (!item) return
+  item.product_id = p.id
   item.variant_id = null
-  const p = allProducts.value.find((x: any) => x.id === item.product_id)
-  item.unitPrice = p ? Number(p.price) : 0
+  item.unitPrice = Number(p.price) || 0
+  productSearch.value[idx] = p.name
+  dropdownOpen.value[idx] = false
 }
 
 function addItem() {
@@ -223,6 +259,10 @@ async function loadDeal() {
         }
       })
     }
+    form.value.items.forEach((item, idx) => {
+      const p = allProducts.value.find((x: any) => x.id === item.product_id)
+      if (p) productSearch.value[idx] = p.name
+    })
   }
 }
 
@@ -248,6 +288,10 @@ async function loadDuplicate() {
         }
       })
     }
+    form.value.items.forEach((item, idx) => {
+      const p = allProducts.value.find((x: any) => x.id === item.product_id)
+      if (p) productSearch.value[idx] = p.name
+    })
   }
 }
 
@@ -285,10 +329,25 @@ async function save() {
   else error.value = (res as any).error?.message || 'Save failed'
 }
 
+function closeAllDropdowns(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.relative')) {
+    for (const key in dropdownOpen.value) {
+      dropdownOpen.value[Number(key)] = false
+    }
+  }
+}
+
 onMounted(async () => {
   await loadCategories()
   await loadProducts()
   if (props.dealId) await loadDeal()
   else if (props.duplicateFrom) await loadDuplicate()
+
+  document.addEventListener('click', closeAllDropdowns)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeAllDropdowns)
 })
 </script>
