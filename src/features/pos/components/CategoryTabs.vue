@@ -21,8 +21,13 @@
           <div class="count">{{ getCount(cat.id, cat.name) }} Items</div>
         </div>
 
-        <div class="icon" v-html="getIcon(cat.name, index, cat.id === activeId)"></div>
-      </div>
+        <img
+          v-if="cat.image_path"
+          :src="fileUrl(cat.image_path)"
+          class="icon object-contain"
+          alt=""
+        />
+        <div v-else class="icon" v-html="getIcon(cat.name, index, cat.id === activeId)"></div>
     </div>
   </div>
 </template>
@@ -66,6 +71,12 @@ function cardStyle(cat: any, index: number) {
   }
   const c = ACTIVE_PALETTE[index % ACTIVE_PALETTE.length]
   return { background: c.bg, color: c.fg }
+}
+
+function fileUrl(p: string): string {
+  if (!p) return ''
+  const normalized = String(p).replace(/\\/g, '/')
+  return `nouvo-file://${normalized}`
 }
 
 function getIcon(catName: string, index: number, isActive: boolean) {

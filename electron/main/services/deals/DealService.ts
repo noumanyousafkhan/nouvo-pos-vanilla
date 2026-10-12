@@ -31,21 +31,21 @@ export interface CartDealLine {
 export class DealService {
   static list(includeInactive = false, onlyValid = true): Deal[] {
     const db = getDatabase()
-    let sql = 'SELECT * FROM deals'
+    let sql = 'SELECT d.*, (SELECT COUNT(*) FROM deal_items WHERE deal_id = d.id) as items_count FROM deals d'
     const conditions: string[] = []
     const params: any[] = []
 
-    if (!includeInactive) conditions.push('is_active = 1')
+    if (!includeInactive) conditions.push('d.is_active = 1')
 
     if (onlyValid) {
       const now = new Date().toISOString()
-      conditions.push('(valid_from IS NULL OR valid_from <= ?)')
-      conditions.push('(valid_to IS NULL OR valid_to >= ?)')
+      conditions.push('(d.valid_from IS NULL OR d.valid_from <= ?)')
+      conditions.push('(d.valid_to IS NULL OR d.valid_to >= ?)')
       params.push(now, now)
     }
 
     if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ')
-    sql += ' ORDER BY name'
+    sql += ' ORDER BY d.name'
 
     return db.prepare(sql).all(...params) as Deal[]
   }

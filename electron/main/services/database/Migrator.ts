@@ -122,7 +122,16 @@ export function runMigrations(): void {
   const tx = db.transaction(() => {
     for (const m of pending) {
       logger.info({ version: m.version, name: m.name }, 'Applying migration')
-      db.exec(m.sql)
+      try {
+        db.exec(m.sql)
+      } catch (err: any) {
+        // Idempotent — agar column already exist karta hai toh skip karo
+        if (err?.message?.includes('duplicate column')) {
+          logger.warn({ version: m.version, name: m.name, err: err.message }, 'Migration skipped — column already exists')
+        } else {
+          throw err
+        }
+      }
       db.prepare('INSERT OR IGNORE INTO version (version, name) VALUES (?, ?)').run(m.version, m.name)
     }
   })

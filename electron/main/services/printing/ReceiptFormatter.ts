@@ -66,7 +66,7 @@ export class ReceiptFormatter {
       if (item.variant_name && !isDeal) {
         lines.push({ type: 'text', text: `(${item.variant_name})`, size: 'small' })
       }
-      if (qty > 1 && !isDeal) {
+      if (qty > 1) {
         lines.push({ type: 'text', text: `  @ ${unitPrice.toFixed(2)} each`, size: 'small' })
       }
 

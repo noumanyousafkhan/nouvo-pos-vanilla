@@ -107,7 +107,14 @@ async function activate() {
     const res = await (window as any).nouvo.invoke('license:activate', raw)
     if (res?.ok) {
       success.value = true
-      setTimeout(() => router.push('/login'), 1500)
+      setTimeout(async () => {
+        const res = await (window as any).nouvo.invoke('auth:hasAnyUser')
+        if (res?.ok && res.data === false) {
+          router.push('/setup')
+        } else {
+          router.push('/login')
+	}
+      }, 1500)
     } else {
       error.value = res?.error?.message || 'Activation failed'
     }

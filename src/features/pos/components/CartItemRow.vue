@@ -38,7 +38,7 @@
           >
             <span class="text-nouvo-green">+</span>
             <span class="truncate">
-              {{ child.productName }}<span v-if="child.variantName"> ({{ child.variantName }})</span>
+              <span v-if="child.quantity > 1" class="font-semibold text-nouvo-green">x{{ child.quantity }} </span>{{ child.productName }}<span v-if="child.variantName"> ({{ child.variantName }})</span>
             </span>
           </div>
         </div>

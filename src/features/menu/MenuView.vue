@@ -60,11 +60,28 @@
         <h2 class="text-xs font-bold text-nouvo-gray uppercase tracking-wider mb-3">Categories</h2>
         <ul class="space-y-1">
           <li v-for="cat in menu.categories" :key="cat.id"
-            class="group cursor-pointer flex items-center gap-2 px-3 py-2.5 rounded-lg transition-colors"
+            class="group cursor-pointer flex items-center gap-1 px-3 py-2.5 rounded-lg transition-colors"
             :class="[selectedCategoryId === cat.id ? 'bg-nouvo-green text-white' : 'hover:bg-nouvo-cream text-nouvo-ink', !cat.is_active ? 'opacity-50' : '']"
             @click="selectCategory(cat.id)">
             <span class="flex-1 text-sm font-medium truncate">{{ cat.name }}</span>
-            <span class="text-xs opacity-70">{{ getCategoryCount(cat) }}</span>
+            <span class="text-xs opacity-70 group-hover:hidden">{{ getCategoryCount(cat) }}</span>
+            <div class="hidden group-hover:flex items-center gap-0.5">
+              <button
+                class="w-6 h-6 rounded hover:bg-white/20 flex items-center justify-center text-[11px]"
+                title="Edit"
+                @click.stop="openCategoryModal(cat)"
+              >✏️</button>
+              <button
+                class="w-6 h-6 rounded hover:bg-white/20 flex items-center justify-center text-[11px]"
+                :title="cat.is_active ? 'Deactivate' : 'Activate'"
+                @click.stop="toggleCategory(cat)"
+              >{{ cat.is_active ? '👁️' : '🚫' }}</button>
+              <button
+                class="w-6 h-6 rounded hover:bg-red-500/20 flex items-center justify-center text-[11px]"
+                title="Delete"
+                @click.stop="deleteCategory(cat)"
+              >🗑️</button>
+            </div>
           </li>
           <li v-if="menu.categories.length === 0" class="text-sm text-nouvo-gray text-center py-4">
             No categories yet
@@ -84,17 +101,30 @@
           </div>
           <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <div v-for="deal in deals" :key="deal.id"
-              class="border border-nouvo-gray-border rounded-xl p-4 hover:border-nouvo-green transition-colors cursor-pointer"
-              @click="openDealModal(deal.id)">
-              <div class="flex items-start gap-3">
-                <div class="w-16 h-16 rounded-lg bg-nouvo-cream flex items-center justify-center overflow-hidden shrink-0">
-                  <img v-if="deal.image_path" :src="fileUrl(deal.image_path)" class="max-w-full max-h-full object-contain" loading="lazy" />
-                  <span v-else class="text-2xl">🍔</span>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <h3 class="font-bold text-sm text-nouvo-ink truncate">{{ deal.name }}</h3>
-                  <p class="text-xs text-nouvo-gray mt-0.5">{{ deal.items_count || 0 }} items</p>
-                  <p class="text-sm font-bold text-nouvo-green mt-1">Rs. {{ Number(deal.price || 0).toFixed(0) }}</p>
+              class="group relative border border-nouvo-gray-border rounded-xl p-4 hover:border-nouvo-green transition-colors">
+              <div class="absolute top-2 right-2 hidden group-hover:flex items-center gap-1 z-10">
+                <button
+                  class="w-7 h-7 rounded bg-white border border-nouvo-gray-border hover:bg-nouvo-cream flex items-center justify-center text-[12px]"
+                  :title="deal.is_active ? 'Deactivate' : 'Activate'"
+                  @click.stop="toggleDeal(deal)"
+                >{{ deal.is_active ? '👁️' : '🚫' }}</button>
+                <button
+                  class="w-7 h-7 rounded bg-white border border-nouvo-gray-border hover:bg-red-50 flex items-center justify-center text-[12px]"
+                  title="Delete"
+                  @click.stop="deleteDeal(deal)"
+                >🗑️</button>
+              </div>
+              <div @click="openDealModal(deal.id)" class="cursor-pointer">
+                <div class="flex items-start gap-3">
+                  <div class="w-16 h-16 rounded-lg bg-nouvo-cream flex items-center justify-center overflow-hidden shrink-0">
+                    <img v-if="deal.image_path" :src="fileUrl(deal.image_path)" class="max-w-full max-h-full object-contain" loading="lazy" />
+                    <span v-else class="text-2xl">🍔</span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <h3 class="font-bold text-sm text-nouvo-ink truncate">{{ deal.name }}</h3>
+                    <p class="text-xs text-nouvo-gray mt-0.5">{{ deal.items_count || 0 }} items</p>
+                    <p class="text-sm font-bold text-nouvo-green mt-1">Rs. {{ Number(deal.price || 0).toFixed(0) }}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -108,18 +138,31 @@
           </div>
           <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <div v-for="product in products" :key="product.id"
-              class="border border-nouvo-gray-border rounded-xl p-4 hover:border-nouvo-green transition-colors cursor-pointer"
-              @click="openProductModal(product.id)">
-              <div class="flex items-start gap-3">
-                <div class="w-16 h-16 rounded-lg bg-nouvo-cream flex items-center justify-center overflow-hidden shrink-0">
-                  <img v-if="product.image_path" :src="fileUrl(product.image_path)" class="max-w-full max-h-full object-contain" loading="lazy" />
-                  <span v-else class="text-2xl">🍕</span>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <h3 class="font-bold text-sm text-nouvo-ink truncate">{{ product.name }}</h3>
-                  <p class="text-xs text-nouvo-gray mt-0.5" v-if="product.has_variants">Variants</p>
-                  <p class="text-xs text-nouvo-gray mt-0.5" v-else-if="product.has_modifiers">Modifiers</p>
-                  <p class="text-sm font-bold text-nouvo-green mt-1">Rs. {{ Number(product.price || 0).toFixed(0) }}</p>
+              class="group relative border border-nouvo-gray-border rounded-xl p-4 hover:border-nouvo-green transition-colors">
+              <div class="absolute top-2 right-2 hidden group-hover:flex items-center gap-1 z-10">
+                <button
+                  class="w-7 h-7 rounded bg-white border border-nouvo-gray-border hover:bg-nouvo-cream flex items-center justify-center text-[12px]"
+                  :title="product.is_active ? 'Deactivate' : 'Activate'"
+                  @click.stop="toggleProduct(product)"
+                >{{ product.is_active ? '👁️' : '🚫' }}</button>
+                <button
+                  class="w-7 h-7 rounded bg-white border border-nouvo-gray-border hover:bg-red-50 flex items-center justify-center text-[12px]"
+                  title="Delete"
+                  @click.stop="deleteProduct(product)"
+                >🗑️</button>
+              </div>
+              <div @click="openProductModal(product.id)" class="cursor-pointer">
+                <div class="flex items-start gap-3">
+                  <div class="w-16 h-16 rounded-lg bg-nouvo-cream flex items-center justify-center overflow-hidden shrink-0">
+                    <img v-if="product.image_path" :src="fileUrl(product.image_path)" class="max-w-full max-h-full object-contain" loading="lazy" />
+                    <span v-else class="text-2xl">🍕</span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <h3 class="font-bold text-sm text-nouvo-ink truncate">{{ product.name }}</h3>
+                    <p class="text-xs text-nouvo-gray mt-0.5" v-if="product.has_variants">Variants</p>
+                    <p class="text-xs text-nouvo-gray mt-0.5" v-else-if="product.has_modifiers">Modifiers</p>
+                    <p class="text-sm font-bold text-nouvo-green mt-1">Rs. {{ Number(product.price || 0).toFixed(0) }}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -144,14 +187,13 @@
       @saved="onProductSaved"
     />
 
-    <!-- DealEditorModal temporarily disabled -->
-    <!-- <DealEditorModal
+    <DealEditorModal
       v-if="showDealModal"
       :deal-id="editingDealId"
       :duplicate-from="duplicateDealSource"
       @close="closeDealModal"
       @saved="onDealSaved"
-    /> -->
+    />
   </div>
 </template>
 
@@ -164,6 +206,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { invokeSafe } from '@/utils/ipc'
 import CategoryModal from './components/CategoryModal.vue'
 import ProductEditorModal from './components/ProductEditorModal.vue'
+import DealEditorModal from '@/features/deals/components/DealEditorModal.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -279,6 +322,30 @@ async function onCategorySaved() {
   await loadCounts()
 }
 
+async function toggleCategory(cat: any) {
+  const res = await invokeSafe<any>('menu:categories:toggle', cat.id)
+  if (res.ok) {
+    await menu.loadCategories(true)
+    await loadCounts()
+  }
+}
+
+async function deleteCategory(cat: any) {
+  if (!confirm(`Delete category "${cat.name}"?`)) return
+  const res = await invokeSafe<any>('menu:categories:delete', cat.id)
+  if (res.ok) {
+    await menu.loadCategories(true)
+    await loadCounts()
+    if (selectedCategoryId.value === cat.id) {
+      selectedCategoryId.value = null
+      selectedCategoryName.value = ''
+      products.value = []
+    }
+  } else {
+    alert('Delete failed: ' + ((res as any).error?.message || 'Unknown'))
+  }
+}
+
 function openProductModal(id?: number, duplicate?: any) {
   editingProductId.value = id ?? null
   duplicateFrom.value = duplicate ?? null
@@ -295,6 +362,25 @@ async function onProductSaved() {
   await loadCounts()
 }
 
+async function toggleProduct(product: any) {
+  const res = await invokeSafe<any>('menu:products:toggle', product.id)
+  if (res.ok) {
+    await loadProducts()
+    await loadCounts()
+  }
+}
+
+async function deleteProduct(product: any) {
+  if (!confirm(`Delete product "${product.name}"?`)) return
+  const res = await invokeSafe<any>('menu:products:softDelete', product.id)
+  if (res.ok) {
+    await loadProducts()
+    await loadCounts()
+  } else {
+    alert('Delete failed: ' + ((res as any).error?.message || 'Unknown'))
+  }
+}
+
 function openDealModal(id?: number, duplicate?: any) {
   editingDealId.value = id ?? null
   duplicateDealSource.value = duplicate ?? null
@@ -308,6 +394,23 @@ function closeDealModal() {
 async function onDealSaved() {
   closeDealModal()
   await loadDeals()
+}
+
+async function toggleDeal(deal: any) {
+  const res = await invokeSafe<any>('deals:toggle', deal.id)
+  if (res.ok) {
+    await loadDeals()
+  }
+}
+
+async function deleteDeal(deal: any) {
+  if (!confirm(`Delete deal "${deal.name}"?`)) return
+  const res = await invokeSafe<any>('deals:delete', deal.id)
+  if (res.ok) {
+    await loadDeals()
+  } else {
+    alert('Delete failed: ' + ((res as any).error?.message || 'Unknown'))
+  }
 }
 
 function fileUrl(p: string): string {
