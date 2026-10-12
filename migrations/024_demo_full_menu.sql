@@ -152,7 +152,7 @@ INSERT OR IGNORE INTO product_modifiers (id, product_id, name, is_required, is_m
   (131, 131, 'Add-ons', 0, 1),
   (132, 132, 'Add-ons', 0, 1),
   (133, 133, 'Add-ons', 0, 1),
-  (134, 19, 'Add-ons', 0, 1);
+  (134, 13, 'Add-ons', 0, 1);
 
 INSERT OR IGNORE INTO modifier_options (id, modifier_id, name, price, is_default) VALUES
   -- Loaded Fries (130)
@@ -171,7 +171,7 @@ INSERT OR IGNORE INTO modifier_options (id, modifier_id, name, price, is_default
   -- Onion Rings (133)
   (190, 133, 'Extra Dip', 50, 0),
   (191, 133, 'Cheese Sauce', 80, 0),
-  -- Existing French Fries (19)
+  -- Existing French Fries (13)
   (192, 134, 'Extra Dip', 50, 0),
   (193, 134, 'Cheese Sauce', 80, 0);
 
