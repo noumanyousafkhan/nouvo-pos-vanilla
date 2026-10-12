@@ -62,6 +62,7 @@ CREATE TABLE products (
   has_variants INTEGER DEFAULT 0,
   has_modifiers INTEGER DEFAULT 0,
   is_deleted INTEGER DEFAULT 0,
+  is_deal_only INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_products_category ON products(category_id, is_active);

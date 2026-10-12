@@ -1,6 +1,6 @@
 {
   "name": "nouvo-pos-vanilla",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "NOUVO POS VANILLA — Reusable Fast-Food POS",
   "main": "dist-electron/main/index.js",
   "author": "NOUVO <havenirnomi@gmail.com",
