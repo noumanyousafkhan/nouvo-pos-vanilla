@@ -3,6 +3,18 @@
 -- Idempotent — safe to run multiple times
 
 -- ═══════════════════════════════════════════════════════
+-- 0. CATEGORIES — ensure exist (foreign key safety)
+-- ═══════════════════════════════════════════════════════
+INSERT OR IGNORE INTO categories (id, name, sort_order, is_active) VALUES
+  (1, 'Pizza', 1, 1),
+  (2, 'Burgers', 2, 1),
+  (3, 'Shawarma', 3, 1),
+  (4, 'Wraps', 4, 1),
+  (5, 'Sides', 5, 1),
+  (6, 'Drinks', 6, 1),
+  (7, 'Deals', 7, 1);
+
+-- ═══════════════════════════════════════════════════════
 -- 1. BURGERS — 4 new products
 -- ═══════════════════════════════════════════════════════
 INSERT OR IGNORE INTO products (id, category_id, name, price, is_active, has_variants, has_modifiers) VALUES
