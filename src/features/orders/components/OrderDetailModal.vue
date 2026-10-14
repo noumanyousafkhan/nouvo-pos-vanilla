@@ -225,12 +225,19 @@ async function onReprint(type: string) {
 
 async function onPrintNow() {
   if (!props.order?.id) return
-  await invokeSafe<any>('print:receipt', {
+  const res = await invokeSafe<any>('print:receipt', {
     orderId: props.order.id,
     type: previewType.value,
     copies: 1,
     isReprint: true
   })
+  const result = (res as any).data
+  if (res.ok && result?.ok === true && result?.printed === true) {
+    closePreview()
+  } else {
+    const reason = result?.error || (res as any).error?.message || 'Printer did not confirm the job was sent.'
+    alert('Print failed: ' + reason)
+  }
 }
 
 function closePreview() {

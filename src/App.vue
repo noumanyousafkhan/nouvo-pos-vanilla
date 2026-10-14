@@ -13,7 +13,7 @@ const auth = useAuthStore()
 onMounted(async () => {
   // Restore session first (sync from localStorage)
   await auth.restoreSession()
-  // Then load settings
-  await settings.loadAll()
+  // Load protected settings only after the main process validates a session.
+  if (auth.isAuthenticated) await settings.loadAll()
 })
 </script>

@@ -25,6 +25,31 @@
       <p v-if="message" class="mt-3 text-sm" :class="messageType === 'success' ? 'text-nouvo-green' : 'text-nouvo-red'">{{ message }}</p>
     </div>
 
+    <!-- SOFTWARE UPDATES -->
+    <div class="border-t-2 border-nouvo-gray-border/40 pt-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div>
+          <h2 class="text-xl font-semibold text-nouvo-green">Software Updates</h2>
+          <p class="text-xs text-nouvo-gray mt-1">Installed version: {{ updateStatus.currentVersion || '—' }}</p>
+        </div>
+        <NButton :loading="checkingUpdates" @click="checkUpdates">Check for Updates</NButton>
+      </div>
+      <div class="rounded-xl border border-nouvo-gray-border bg-white p-4">
+        <p class="text-sm font-semibold text-nouvo-ink">{{ updateStatus.message || 'Check for updates to see the current status.' }}</p>
+        <div v-if="updateStatus.state === 'downloading'" class="mt-3 h-2 rounded-full bg-nouvo-gray-border overflow-hidden">
+          <div class="h-full bg-nouvo-green transition-all" :style="{ width: updateStatus.percent + '%' }"></div>
+        </div>
+        <p v-if="updateStatus.error" class="text-xs text-nouvo-red mt-2">{{ updateStatus.error }}</p>
+        <div v-if="updateStatus.state === 'available'" class="mt-3">
+          <NButton :loading="downloadingUpdate" @click="downloadUpdate">Download Update</NButton>
+        </div>
+        <div v-if="updateStatus.state === 'downloaded'" class="mt-3">
+          <NButton @click="installUpdate">Restart & Install Update</NButton>
+        </div>
+        <p class="text-xs text-nouvo-gray mt-3">Offline update: run the matching NOUVO POS Vanilla Setup installer over the existing installation. Do not uninstall first; keep the same install location and your business data remains in the app data folder.</p>
+      </div>
+    </div>
+
     <!-- BACKUP & RESTORE -->
     <div class="border-t-2 border-nouvo-gray-border/40 pt-6">
       <div class="flex items-center justify-between mb-4">
@@ -119,6 +144,9 @@ const messageType = ref<'success' | 'error'>('success')
 const backups = ref<any[]>([])
 const loadingBackups = ref(false)
 const creatingBackup = ref(false)
+const checkingUpdates = ref(false)
+const downloadingUpdate = ref(false)
+const updateStatus = ref<any>({ state: 'idle', currentVersion: '', availableVersion: null, percent: 0, message: '', error: null })
 
 const channelOptions = [
   { value: 'stable', label: 'Stable' },
@@ -152,6 +180,32 @@ async function save() {
     message.value = (res as any).error?.message || 'Save failed'
     messageType.value = 'error'
   }
+}
+
+async function loadUpdateStatus() {
+  const res = await invokeSafe<any>('update:status')
+  if (res.ok && res.data) updateStatus.value = res.data
+}
+
+async function checkUpdates() {
+  checkingUpdates.value = true
+  const res = await invokeSafe<any>('update:check')
+  checkingUpdates.value = false
+  if (res.ok && res.data) updateStatus.value = res.data
+  else updateStatus.value = { ...updateStatus.value, state: 'error', message: 'Update check failed.', error: (res as any).error?.message || 'Unknown error' }
+}
+
+async function downloadUpdate() {
+  downloadingUpdate.value = true
+  const res = await invokeSafe<any>('update:download')
+  downloadingUpdate.value = false
+  if (res.ok && res.data) updateStatus.value = res.data
+  else updateStatus.value = { ...updateStatus.value, state: 'error', message: 'Update download failed.', error: (res as any).error?.message || 'Unknown error' }
+}
+
+async function installUpdate() {
+  if (!confirm('The application will close and restart to install the update. Make sure all orders are saved. Continue?')) return
+  await invokeSafe('update:install')
 }
 
 async function loadBackups() {
@@ -222,5 +276,6 @@ function formatSize(bytes: number | null | undefined): string {
 onMounted(() => {
   form.value = { ...store.system }
   loadBackups()
+  loadUpdateStatus()
 })
 </script>

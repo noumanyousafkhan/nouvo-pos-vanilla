@@ -316,12 +316,23 @@ async function onReprint(type: string) {
 
 async function onPrintNow() {
   if (!lastOrderId.value) return
-  await invokeSafe<any>('print:receipt', {
+
+  const res = await invokeSafe<any>('print:receipt', {
     orderId: lastOrderId.value,
     type: previewType.value,
     copies: 1,
     isReprint: true
   })
+
+  const result = (res as any).data
+  // The IPC wrapper can succeed even when PrinterService reports a failed print.
+  if (res.ok && result?.ok === true && result?.printed === true) {
+    closePreview()
+    closeSuccess()
+  } else {
+    const reason = result?.error || (res as any).error?.message || 'Printer did not confirm the job was sent.'
+    alert('Print failed: ' + reason)
+  }
 }
 
 function closePreview() {

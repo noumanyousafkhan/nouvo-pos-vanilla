@@ -5,6 +5,7 @@ import { CreateOrderSchema, OrderFiltersSchema } from './schemas'
 import { AppError, NotFoundError } from '../utils/errors'
 import { SettingsService } from '../settings/SettingsService'
 import { logger } from '../utils/logger'
+import { validateOrderTotals } from './orderMath'
 
 export interface OrderRecord {
   id: number
@@ -55,6 +56,7 @@ export class OrderService {
     }
 
     this.validateOrder(parsed)
+    this.validateItemPricing(parsed.items)
 
     const tx = db.transaction(() => {
       const orderPrefix = SettingsService.get('order.order_prefix') ?? 'ORD'
@@ -140,8 +142,85 @@ export class OrderService {
     return this.getFullOrder(result.orderId)
   }
 
+  private static validateItemPricing(items: any[]): void {
+    const db = getDatabase()
+
+    for (const item of items) {
+      if (item.dealId) {
+        const deal = db.prepare('SELECT name, price, is_active FROM deals WHERE id = ?').get(item.dealId) as
+          { name: string; price: number; is_active: number } | undefined
+        if (!deal || !deal.is_active) {
+          throw new AppError('VALIDATION', 'A selected deal is no longer available')
+        }
+        if (Math.abs(Number(deal.price) - item.basePrice) > 0.01) {
+          throw new AppError('VALIDATION', 'Deal price changed. Please refresh the cart')
+        }
+        if (item.unitPrice < Number(deal.price)) {
+          throw new AppError('VALIDATION', 'Deal total cannot be less than the deal price')
+        }
+        continue
+      }
+
+      if (!item.productId) throw new AppError('VALIDATION', 'Cart item has no valid product')
+      const product = db.prepare(
+        'SELECT name, price, is_active, is_deleted FROM products WHERE id = ?'
+      ).get(item.productId) as
+        { name: string; price: number; is_active: number; is_deleted: number } | undefined
+      if (!product || !product.is_active || product.is_deleted) {
+        throw new AppError('VALIDATION', 'A selected product is no longer available')
+      }
+      if (Math.abs(Number(product.price) - item.basePrice) > 0.01) {
+        throw new AppError('VALIDATION', 'Product price changed. Please refresh the cart')
+      }
+
+      let expectedUnitPrice = Number(product.price)
+      if (item.variantId) {
+        const variant = db.prepare(
+          'SELECT name, price_adjust FROM product_variants WHERE id = ? AND product_id = ?'
+        ).get(item.variantId, item.productId) as { name: string; price_adjust: number } | undefined
+        if (!variant) throw new AppError('VALIDATION', 'Selected product variant is invalid')
+        if (Math.abs(Number(variant.price_adjust) - item.variantAdjust) > 0.01) {
+          throw new AppError('VALIDATION', 'Variant price changed. Please refresh the cart')
+        }
+        expectedUnitPrice += Number(variant.price_adjust)
+      } else if (Math.abs(Number(item.variantAdjust || 0)) > 0.01) {
+        throw new AppError('VALIDATION', 'Unexpected variant price adjustment')
+      }
+
+      for (const modifier of item.modifiers || []) {
+        if (!modifier.optionId) throw new AppError('VALIDATION', 'Selected modifier option is invalid')
+        const option = db.prepare(
+          'SELECT mo.name, mo.price FROM modifier_options mo JOIN product_modifiers pm ON pm.id = mo.modifier_id WHERE mo.id = ? AND pm.product_id = ?'
+        ).get(modifier.optionId, item.productId) as { name: string; price: number } | undefined
+        if (!option) throw new AppError('VALIDATION', 'Selected modifier does not belong to this product')
+        if (Math.abs(Number(option.price) - modifier.price) > 0.01) {
+          throw new AppError('VALIDATION', 'Modifier price changed. Please refresh the cart')
+        }
+        expectedUnitPrice += Number(option.price)
+      }
+
+      if (Math.abs(expectedUnitPrice - item.unitPrice) > 0.01) {
+        throw new AppError('VALIDATION', 'Item unit price does not match current menu pricing')
+      }
+    }
+  }
+
   private static validateOrder(parsed: any) {
     const orderSettings = SettingsService.getOrder()
+
+    if (!orderSettings.order_types.includes(parsed.orderType)) {
+      throw new AppError('VALIDATION', 'This order type is disabled in settings')
+    }
+    if (!orderSettings.discount_enabled && parsed.discount > 0) {
+      throw new AppError('VALIDATION', 'Discounts are disabled in settings')
+    }
+    const maxDiscountPercent = Math.max(0, Math.min(100, Number(orderSettings.discount_max_percent) || 0))
+    if (parsed.discount > parsed.subtotal * maxDiscountPercent / 100 + 0.01) {
+      throw new AppError('VALIDATION', `Discount exceeds the configured limit of ${maxDiscountPercent}%`)
+    }
+    if (!orderSettings.delivery_charge_enabled && parsed.deliveryCharge > 0) {
+      throw new AppError('VALIDATION', 'Delivery charges are disabled in settings')
+    }
 
     if (parsed.orderType === 'delivery' && orderSettings.require_customer_for_delivery) {
       if (!parsed.customerName || !parsed.customerPhone || !parsed.customerAddress) {
@@ -161,8 +240,23 @@ export class OrderService {
       throw new AppError('VALIDATION', 'Amount received is less than total')
     }
 
-    const computed = parsed.subtotal - parsed.discount + parsed.tax + parsed.deliveryCharge
-    if (Math.abs(computed - parsed.total) > 0.01) {
+    // With tax-inclusive pricing the tax is already contained in item prices.
+    const issue = validateOrderTotals({
+      items: parsed.items,
+      subtotal: parsed.subtotal,
+      discount: parsed.discount,
+      deliveryCharge: parsed.deliveryCharge,
+      tax: parsed.tax,
+      total: parsed.total,
+      taxInclusive: SettingsService.getBusiness().tax_inclusive
+    })
+    if (issue === 'line_total') {
+      throw new AppError('VALIDATION', 'An item line total does not match its unit price and quantity')
+    }
+    if (issue === 'subtotal') {
+      throw new AppError('VALIDATION', 'Subtotal does not match the cart items')
+    }
+    if (issue === 'total') {
       throw new AppError('VALIDATION', 'Total does not match')
     }
   }
@@ -397,7 +491,8 @@ export class OrderService {
     if (!order) throw new NotFoundError('Order not found')
     if (order.status !== 'voided') throw new AppError('NOT_VOIDED', 'Order is not voided')
 
-    db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(orderId)
+    db.prepare("UPDATE orders SET status = 'completed', completed_at = COALESCE(completed_at, ?) WHERE id = ?")
+      .run(new Date().toISOString(), orderId)
     AuditService.log('order.restored', { orderId, orderNumber: order.order_number }, userId)
     return this.getFullOrder(orderId)
   }

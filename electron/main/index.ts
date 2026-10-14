@@ -7,6 +7,9 @@ import { runMigrations } from './services/database/Migrator'
 import { cleanupExpiredSessions } from './services/auth/SessionService'
 import { logger } from './services/utils/logger'
 import { getAppPaths } from './services/utils/paths'
+import { BackupService } from './services/backup/BackupService'
+import { SettingsService } from './services/settings/SettingsService'
+import { UpdateService } from './services/updates/UpdateService'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -14,19 +17,35 @@ const __dirname = dirname(__filename)
 let mainWindow: BrowserWindow | null = null
 const isDev = !app.isPackaged
 
-// ─── Register custom protocol for local files ───
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'nouvo-file',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true,
-      bypassCSP: true
+function scheduleDailyBackup(): void {
+  try {
+    const settings = SettingsService.getSystem()
+    const match = String(settings.backup_time || '02:00').match(/^(\d{2}):(\d{2})$/)
+    const hour = match ? Number(match[1]) : 2
+    const minute = match ? Number(match[2]) : 0
+    if (hour > 23 || minute > 59) {
+      logger.warn({ backupTime: settings.backup_time }, 'Invalid automatic backup time; using 02:00')
     }
+
+    const now = new Date()
+    const next = new Date(now)
+    next.setHours(hour <= 23 ? hour : 2, minute <= 59 ? minute : 0, 0, 0)
+    if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1)
+
+    const delay = Math.max(1000, next.getTime() - now.getTime())
+    logger.info({ nextBackupAt: next.toISOString() }, 'Scheduled next automatic backup')
+    setTimeout(() => {
+      try {
+        BackupService.runAutoBackupIfNeeded()
+      } catch (err) {
+        logger.error({ err }, 'Scheduled automatic backup failed')
+      }
+      scheduleDailyBackup()
+    }, delay)
+  } catch (err) {
+    logger.error({ err }, 'Could not schedule automatic backup')
   }
-])
+}
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -132,6 +151,11 @@ app.whenReady().then(async () => {
     runMigrations()
     logger.info('Migrations complete')
 
+    // Ensure a backup exists for today even if the PC was off at the scheduled time.
+    BackupService.runAutoBackupIfNeeded()
+    // Honour the configured daily backup time after migrations complete.
+    scheduleDailyBackup()
+
     try {
       cleanupExpiredSessions()
     } catch (err) {
@@ -142,6 +166,14 @@ app.whenReady().then(async () => {
 
     await createWindow()
     logger.info('Window created')
+
+    UpdateService.initialize()
+    if (app.isPackaged && SettingsService.getBoolean('system.auto_check_updates', true)) {
+      // Avoid competing with startup/database initialization and first render.
+      setTimeout(() => {
+        void UpdateService.check().catch((err) => logger.warn({ err }, 'Update check failed'))
+      }, 15000)
+    }
   } catch (err) {
     logger.error({ err }, 'Startup failed')
     app.quit()

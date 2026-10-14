@@ -38,7 +38,7 @@ export function getSessionUser(token: string): SessionUser | null {
     SELECT u.id, u.role
     FROM sessions s
     JOIN users u ON u.id = s.user_id
-    WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+    WHERE s.token = ? AND julianday(s.expires_at) > julianday('now') AND u.is_active = 1
   `).get(token) as SessionUser | undefined
   return row ?? null
 }
@@ -51,7 +51,7 @@ export function destroySession(token: string): void {
 
 export function cleanupExpiredSessions(): number {
   const db = getDatabase()
-  const result = db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run()
+  const result = db.prepare("DELETE FROM sessions WHERE julianday(expires_at) < julianday('now')").run()
   if (result.changes > 0) {
     logger.info({ cleaned: result.changes }, 'Expired sessions cleaned')
   }

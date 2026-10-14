@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const INVOKE_CHANNELS = [
   'app:version', 'app:ping',
+  'update:status', 'update:check', 'update:download', 'update:install',
   // Auth
   'auth:login', 'auth:logout', 'auth:me', 'auth:hasAnyUser', 'auth:createInitialAdmin',
   // Settings
@@ -49,12 +50,17 @@ const INVOKE_CHANNELS = [
 
 type InvokeChannel = typeof INVOKE_CHANNELS[number]
 
+let authToken: string | null = null
+
 const api = {
+  setSessionToken: (token: string | null) => {
+    authToken = typeof token === 'string' && token.length > 0 ? token : null
+  },
   invoke: (channel: InvokeChannel, ...args: unknown[]) => {
     if (!INVOKE_CHANNELS.includes(channel)) {
       return Promise.reject(new Error(`Channel "${channel}" is not allowed`))
     }
-    return ipcRenderer.invoke(channel, ...args)
+    return ipcRenderer.invoke(channel, ...args, authToken)
   }
 }
 

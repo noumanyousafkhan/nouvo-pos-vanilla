@@ -5,7 +5,7 @@ import { copyFileSync, existsSync, statSync, unlinkSync, readFileSync } from 'fs
 import { createHash } from 'crypto'
 import { AuditService } from '../audit/AuditService'
 import { SettingsService } from '../settings/SettingsService'
-import { getCurrentSchemaVersion } from '../database/Migrator'
+import { getCurrentSchemaVersion, runMigrations } from '../database/Migrator'
 import { AppError, NotFoundError } from '../utils/errors'
 import { logger } from '../utils/logger'
 import { app } from 'electron'
@@ -137,7 +137,7 @@ export class BackupService {
 
   static cleanupOldBackups(): number {
     const db = getDatabase()
-    const retentionDays = SettingsService.getNumber('backup.retention_days', 30)
+    const retentionDays = SettingsService.getNumber('system.backup_retention_days', SettingsService.getNumber('backup.retention_days', 30))
     const maxCount = SettingsService.getNumber('backup.max_count', 100)
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
 
@@ -169,8 +169,7 @@ export class BackupService {
   }
 
   static runAutoBackupIfNeeded(): void {
-    if (!SettingsService.getBoolean('backup.enabled', true)) return
-    if (!SettingsService.getBoolean('backup.auto_on_start', true)) return
+    if (!SettingsService.getBoolean('system.backup_enabled', SettingsService.getBoolean('backup.enabled', true))) return
 
     const db = getDatabase()
     const today = new Date().toISOString().slice(0, 10)
@@ -230,9 +229,12 @@ export class BackupService {
 
     // 2. Pre-restore backup
     let preRestorePath: string | null = null
+    let currentBackupRecords: any[] = []
     try {
       const pre = this.createBackup({ type: 'pre_restore', note: `Before restoring backup #${record.id}` })
       preRestorePath = pre.path
+      // Preserve metadata for the pre-restore file as the target database is replaced.
+      currentBackupRecords = currentDb.prepare('SELECT * FROM backups').all() as any[]
     } catch (err) {
       logger.error({ err }, 'Pre-restore backup failed')
       throw new AppError('PRE_RESTORE_FAILED', 'Could not create safety backup. Restore aborted.')
@@ -259,7 +261,19 @@ export class BackupService {
 
       initDatabase(dbPath)
 
+      // Upgrade older backup schemas before the current application uses them.
+      runMigrations()
       const restoredDb = getDatabase()
+
+      // Keep backup history from the current installation, including the safety backup.
+      // Existing records from the restored database remain; paths are de-duplicated.
+      const insertBackup = restoredDb.prepare('INSERT INTO backups (path, size, type, created_at, checksum, schema_version, app_version, note) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM backups WHERE path = ?)')
+      for (const b of currentBackupRecords) {
+        insertBackup.run(
+          b.path, b.size, b.type, b.created_at, b.checksum ?? null,
+          b.schema_version ?? null, b.app_version ?? null, b.note ?? null, b.path
+        )
+      }
 
       // 4. Verify integrity
       const check = restoredDb.prepare('PRAGMA integrity_check').get() as any
@@ -350,8 +364,8 @@ export class BackupService {
       total: row.total,
       totalSize: row.total_size,
       lastBackup: row.last_backup,
-      retentionDays: SettingsService.getNumber('backup.retention_days', 30),
-      enabled: SettingsService.getBoolean('backup.enabled', true)
+      retentionDays: SettingsService.getNumber('system.backup_retention_days', SettingsService.getNumber('backup.retention_days', 30)),
+      enabled: SettingsService.getBoolean('system.backup_enabled', SettingsService.getBoolean('backup.enabled', true))
     }
   }
 }

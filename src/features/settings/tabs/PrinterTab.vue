@@ -61,8 +61,7 @@ const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
 
 const typeOptions = [
-  { value: 'thermal', label: 'Thermal (ESC/POS)' },
-  { value: 'laser', label: 'Laser' }
+  { value: 'thermal', label: 'Thermal (ESC/POS)' }
 ]
 const connectionOptions = [
   { value: 'usb', label: 'USB' },

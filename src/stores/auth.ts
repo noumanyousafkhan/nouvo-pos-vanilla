@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useSettingsStore } from './settings'
 
 const STORAGE_KEY_TOKEN = 'nouvo_auth_token'
 const STORAGE_KEY_USER = 'nouvo_auth_user'
@@ -12,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<any>(savedUser ? JSON.parse(savedUser) : null)
   const token = ref<string | null>(savedToken)
   const isAuthenticated = computed(() => !!user.value && !!token.value)
+  ;(window as any).nouvo?.setSessionToken?.(token.value)
 
   function persist() {
     if (token.value) localStorage.setItem(STORAGE_KEY_TOKEN, token.value)
@@ -26,7 +28,9 @@ export const useAuthStore = defineStore('auth', () => {
     if (res?.ok) {
       token.value = res.data.token
       user.value = res.data.user
+      ;(window as any).nouvo?.setSessionToken?.(token.value)
       persist()
+      await useSettingsStore().loadAll()
       return { ok: true }
     }
     return { ok: false, error: res?.error?.message || 'Login failed' }
@@ -40,28 +44,27 @@ export const useAuthStore = defineStore('auth', () => {
     }
     user.value = null
     token.value = null
+    ;(window as any).nouvo?.setSessionToken?.(null)
     persist()
   }
 
   async function restoreSession() {
-    // If we already have user, no need to restore
-    if (user.value && token.value) return true
-
-    // If we have a token but no user, try to restore
-    if (token.value && !user.value) {
+    // Validate persisted tokens with the main process every time; localStorage is not trusted.
+    if (token.value) {
       try {
         const res = await (window as any).nouvo.invoke('auth:me', token.value)
         if (res?.ok && res.data) {
           user.value = res.data
+          ;(window as any).nouvo?.setSessionToken?.(token.value)
           persist()
           return true
         }
       } catch {}
     }
 
-    // No valid session
     user.value = null
     token.value = null
+    ;(window as any).nouvo?.setSessionToken?.(null)
     persist()
     return false
   }

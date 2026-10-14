@@ -1,3 +1,8 @@
+import { spawn } from 'node:child_process'
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { logger } from '../utils/logger'
 import { SettingsService } from '../settings/SettingsService'
 import { OrderService } from '../orders/OrderService'
@@ -6,6 +11,91 @@ import { ReceiptFormatter } from './ReceiptFormatter'
 // node-thermal-printer is CommonJS
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { printer: ThermalPrinter, PrinterTypes, CharacterSet } = require('node-thermal-printer')
+
+function printRawToCups(queueName: string, buffer: Buffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('lp', ['-d', queueName, '-o', 'raw'], { stdio: ['pipe', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => { stdout += chunk })
+    child.stderr.on('data', (chunk: string) => { stderr += chunk })
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout.trim() || `CUPS accepted the print job for ${queueName}`)
+      else reject(new Error(stderr.trim() || `CUPS print failed with exit code ${code}`))
+    })
+    child.stdin.on('error', reject)
+    child.stdin.end(buffer)
+  })
+}
+
+async function printRawToWindowsSpooler(queueName: string, buffer: Buffer): Promise<string> {
+  const filePath = join(tmpdir(), `nouvo-receipt-${randomUUID()}.bin`)
+  await fs.writeFile(filePath, buffer)
+  const script = String.raw`
+$ErrorActionPreference = 'Stop'
+$source = @'
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+public static class NouvoRawPrinter {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  public class DOC_INFO_1 { public string pDocName; public string pOutputFile; public string pDataType; }
+  [DllImport("winspool.drv", SetLastError=true, CharSet=CharSet.Unicode)] static extern bool OpenPrinter(string name, out IntPtr handle, IntPtr defaults);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool ClosePrinter(IntPtr handle);
+  [DllImport("winspool.drv", SetLastError=true, CharSet=CharSet.Unicode)] static extern int StartDocPrinter(IntPtr handle, int level, [In] DOC_INFO_1 info);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool EndDocPrinter(IntPtr handle);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool StartPagePrinter(IntPtr handle);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool EndPagePrinter(IntPtr handle);
+  [DllImport("winspool.drv", SetLastError=true)] static extern bool WritePrinter(IntPtr handle, byte[] bytes, int count, out int written);
+  public static string Send(string name, string path) {
+    IntPtr handle;
+    if (!OpenPrinter(name, out handle, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot open printer queue: " + name);
+    try {
+      var info = new DOC_INFO_1 { pDocName = "NOUVO POS Receipt", pDataType = "RAW", pOutputFile = null };
+      if (StartDocPrinter(handle, 1, info) == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot start raw print job");
+      try {
+        if (!StartPagePrinter(handle)) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot start printer page");
+        try {
+          byte[] bytes = File.ReadAllBytes(path); int written;
+          if (!WritePrinter(handle, bytes, bytes.Length, out written)) throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows failed to write receipt data");
+          if (written != bytes.Length) throw new IOException("Incomplete raw print write: " + written + " of " + bytes.Length + " bytes");
+          return "Windows spooler accepted raw receipt data for " + name;
+        } finally { EndPagePrinter(handle); }
+      } finally { EndDocPrinter(handle); }
+    } finally { ClosePrinter(handle); }
+  }
+}
+'@
+Add-Type -TypeDefinition $source -Language CSharp
+[Console]::WriteLine([NouvoRawPrinter]::Send($env:NOUVO_PRINTER_QUEUE, $env:NOUVO_PRINTER_FILE))
+`
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+        env: { ...process.env, NOUVO_PRINTER_QUEUE: queueName, NOUVO_PRINTER_FILE: filePath },
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.setEncoding('utf8')
+      child.stderr.setEncoding('utf8')
+      child.stdout.on('data', (chunk: string) => { stdout += chunk })
+      child.stderr.on('data', (chunk: string) => { stderr += chunk })
+      child.on('error', reject)
+      child.on('close', (code) => {
+        if (code === 0) resolve(stdout.trim() || `Windows spooler accepted the print job for ${queueName}`)
+        else reject(new Error(stderr.trim() || `Windows raw printing failed with exit code ${code}`))
+      })
+    })
+  } finally {
+    await fs.unlink(filePath).catch(() => undefined)
+  }
+}
 
 export interface PrintConfig {
   enabled: boolean
@@ -60,9 +150,17 @@ export class PrinterService {
   private static createPrinter(config: PrintConfig): any | null {
     if (!config.enabled) return null
     try {
+      // Send raw ESC/POS bytes through each OS's native spooler for USB/system queues.
+      // This avoids relying on the optional native `printer` driver package.
+      const queueName = config.interface.slice('printer:'.length)
+      const printerInterface = config.interface.startsWith('printer:') && process.platform === 'linux'
+        ? { execute: (buffer: Buffer) => printRawToCups(queueName, buffer) }
+        : config.interface.startsWith('printer:') && process.platform === 'win32'
+          ? { execute: (buffer: Buffer) => printRawToWindowsSpooler(queueName, buffer) }
+          : config.interface
       const printer = new ThermalPrinter({
         type: config.type === 'star' ? PrinterTypes.STAR : PrinterTypes.EPSON,
-        interface: config.interface,
+        interface: printerInterface,
         characterSet: CharacterSet.PC437_USA,
         removeSpecialCharacters: false,
         lineCharacter: '-',
@@ -196,28 +294,28 @@ export class PrinterService {
       const preview = this.formatPreview(lines)
 
       const config = this.getConfig()
+      if (!config.enabled) {
+        return { ok: false, error: 'Printer is disabled. Enable it in Settings → Printer.', copies, preview, lines, printed: false }
+      }
       const printer = this.createPrinter(config)
-      let printed = false
-
-      if (printer) {
-        try {
-          for (let c = 0; c < copies; c++) {
-            await this.applyLines(printer, lines)
-            if (config.cut_enabled) printer.cut()
-          }
-          if (config.beep_enabled) printer.beep()
-          if (config.open_drawer) printer.openCashDrawer()
-          await printer.execute()
-          printed = true
-          logger.info({ orderId: params.orderId, type: params.type, copies }, 'Receipt sent to printer')
-        } catch (printErr: any) {
-          logger.error({ printErr, config }, 'Printer execution failed — preview only')
-        }
-      } else {
-        logger.warn('Printer not enabled — preview only')
+      if (!printer) {
+        return { ok: false, error: 'Could not initialize the printer. Check the printer type, connection, and queue name.', copies, preview, lines, printed: false }
       }
 
-      return { ok: true, copies, preview, lines, printed }
+      try {
+        for (let c = 0; c < copies; c++) {
+          await this.applyLines(printer, lines)
+          if (config.cut_enabled) printer.cut()
+        }
+        if (config.beep_enabled) printer.beep()
+        if (config.open_drawer) printer.openCashDrawer()
+        const jobResult = await printer.execute()
+        logger.info({ orderId: params.orderId, type: params.type, copies, jobResult }, 'Receipt sent to printer')
+        return { ok: true, copies, preview, lines, printed: true }
+      } catch (printErr: any) {
+        logger.error({ printErr, config }, 'Printer execution failed')
+        return { ok: false, error: printErr?.message || 'Printer execution failed', copies, preview, lines, printed: false }
+      }
     } catch (err: any) {
       logger.error({ err, orderId: params.orderId }, 'Print failed')
       return { ok: false, error: err?.message || 'Print failed', copies }
