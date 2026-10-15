@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,6 +12,7 @@ import { ReceiptFormatter } from './ReceiptFormatter'
 // node-thermal-printer is CommonJS
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { printer: ThermalPrinter, PrinterTypes, CharacterSet } = require('node-thermal-printer')
+const execFileAsync = promisify(execFile)
 
 function printRawToCups(queueName: string, buffer: Buffer): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -97,6 +99,47 @@ Add-Type -TypeDefinition $source -Language CSharp
   }
 }
 
+async function resolveWindowsPrinterQueue(requestedName: string): Promise<string> {
+  const query = "$printers = @(Get-CimInstance Win32_Printer | Select-Object Name, DriverName, PortName); $printers | ConvertTo-Json -Compress"
+  let printers: Array<{ Name?: string; DriverName?: string; PortName?: string }>
+  try {
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', query],
+      { timeout: 10000, maxBuffer: 16384 }
+    )
+    const parsed: unknown = JSON.parse(stdout.trim() || '[]')
+    printers = (Array.isArray(parsed) ? parsed : [parsed]) as typeof printers
+  } catch (err: any) {
+    throw new Error(`Could not list Windows printers: ${String(err?.message || err).slice(0, 300)}`)
+  }
+
+  const requested = requestedName.trim()
+  const exact = printers.find(p => p.Name?.toLowerCase() === requested.toLowerCase())
+  if (requested && requested.toLowerCase() !== 'default' && exact?.Name) return exact.Name
+
+  if (requested && requested.toLowerCase() !== 'default') {
+    const partial = printers.find(p =>
+      [p.Name, p.DriverName, p.PortName].filter(Boolean).some(value =>
+        String(value).toLowerCase().includes(requested.toLowerCase())
+      )
+    )
+    if (partial?.Name) return partial.Name
+    // Preserve an explicit queue name so Windows returns its precise spooler error.
+    return requested
+  }
+
+  const thermal = printers.find(p =>
+    /black\s*copper|rongta|bc[-\s]?88|thermal|receipt|pos[-\s]?(58|80)|xp[-\s]?80|80mm|58mm/i.test(
+      [p.Name, p.DriverName, p.PortName].filter(Boolean).join(' ')
+    )
+  )
+  if (thermal?.Name) return thermal.Name
+
+  const installed = printers.map(p => p.Name).filter(Boolean).join(', ')
+  throw new Error(`Could not identify a Windows thermal printer. Installed printers: ${installed || 'none found'}. Set the exact queue name in Settings → Printer.`)
+}
+
 export interface PrintConfig {
   enabled: boolean
   interface: string
@@ -145,6 +188,14 @@ export class PrinterService {
       beep_enabled: SettingsService.getBoolean('printer.beep_enabled', false),
       open_drawer: SettingsService.getBoolean('printer.open_drawer', false)
     }
+  }
+
+  private static async getResolvedConfig(): Promise<PrintConfig> {
+    const config = this.getConfig()
+    if (process.platform !== 'win32' || !config.interface.startsWith('printer:')) return config
+    const requestedQueue = config.interface.slice('printer:'.length)
+    const queueName = await resolveWindowsPrinterQueue(requestedQueue)
+    return { ...config, interface: `printer:${queueName}` }
   }
 
   private static createPrinter(config: PrintConfig): any | null {
@@ -293,7 +344,7 @@ export class PrinterService {
         : ReceiptFormatter.formatCustomer(data)
       const preview = this.formatPreview(lines)
 
-      const config = this.getConfig()
+      const config = await this.getResolvedConfig()
       if (!config.enabled) {
         return { ok: false, error: 'Printer is disabled. Enable it in Settings → Printer.', copies, preview, lines, printed: false }
       }
@@ -372,7 +423,7 @@ export class PrinterService {
         { type: 'feed', lines: 4 }
       ]
       const preview = this.formatPreview(lines)
-      const config = this.getConfig()
+      const config = await this.getResolvedConfig()
       const printer = this.createPrinter(config)
       let printed = false
       if (printer) {
@@ -400,7 +451,7 @@ export class PrinterService {
   // ═══════════════════════════════════════════════════════
   static async isAvailable(): Promise<{ ok: boolean; available: boolean; interface?: string; error?: string }> {
     try {
-      const config = this.getConfig()
+      const config = await this.getResolvedConfig()
       if (!config.enabled) {
         return { ok: true, available: false, error: 'Printer disabled in settings' }
       }
